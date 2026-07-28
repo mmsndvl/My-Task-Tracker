@@ -84,6 +84,8 @@
   .st-hold { background: #F1E9F9; color: var(--purple); }
   .st-unpaid { background: #FBE7E4; color: var(--red); }
   td.relcell { min-width: 92px; }
+  .sidebyside { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+  .sidebyside > .gridcard { flex: 1 1 390px; min-width: 0; }
   td.relcell.reldone { background: #D9EDFB !important; }
   .relamt { cursor: pointer; padding: 2px 4px; border-radius: 6px; }
   .relamt:hover { background: rgba(14,107,92,.08); }
@@ -710,6 +712,7 @@
     var netSoFar = incAct - expAct;
     var holds = holdTotal(m);
     var withdrawable = Math.round((netSoFar - holds) * 100) / 100;
+    h += '<div class="sidebyside">';
     h += '<div class="card gridcard"><div class="gridhead"><div class="t">🏦 Funds Planner — Iwan sa Bank vs. Pwedeng I-withdraw</div></div>';
     h += '<div class="statgrid" style="margin:0 0 12px">';
     h += '<div class="card stat" style="border-color:#D9C7F0"><div class="lbl">🔒 Iiwan sa bank (naka-hold para sa bills)</div>' +
@@ -800,6 +803,7 @@
     });
     h += '<td>' + fmt(relPlanTotal) + '</td></tr>';
     h += '</table></div><div class="hint">Ito ang plano mo kung magkano ang ilalabas sa holding bank kada linggo. Tap ang amount para i-edit; tap ang ✓ para markahang <b>nailabas/nabayaran na</b> — magiging light blue ang cell, katulad ng ginagawa mo sa Excel.</div></div>';
+    h += '</div>';   // end sidebyside
 
     document.getElementById("viewExp").innerHTML = h;
   }
