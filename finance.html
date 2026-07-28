@@ -83,6 +83,13 @@
   .st-soon { background: #E7EFF9; color: var(--blue); }
   .st-hold { background: #F1E9F9; color: var(--purple); }
   .st-unpaid { background: #FBE7E4; color: var(--red); }
+  td.relcell { min-width: 92px; }
+  td.relcell.reldone { background: #D9EDFB !important; }
+  .relamt { cursor: pointer; padding: 2px 4px; border-radius: 6px; }
+  .relamt:hover { background: rgba(14,107,92,.08); }
+  td.relcell.reldone .relamt { color: #2A5E8C; font-weight: 700; }
+  .reldot { border: none; background: #EAEEEA; color: #A8B5AE; border-radius: 50%; width: 19px; height: 19px; font-size: 10px; cursor: pointer; margin-left: 4px; vertical-align: middle; line-height: 1; }
+  td.relcell.reldone .reldot { background: #3D6FB4; color: #fff; }
   .st-none { background: #F0F3F0; color: var(--faint); }
   td input.cellinput { width: 74px; font-size: 12px; padding: 4px 6px; border: 1px solid var(--accent); border-radius: 7px; outline: none; text-align: right; }
 
@@ -294,7 +301,7 @@
       var paid = sumW(it.w);
       var carryNext = Math.round(((it.projected || 0) + (it.carry || 0) - paid) * 100) / 100;
       m.monthly.push({ id: uid(), name: it.name, due: it.due || "", alloc: it.alloc || 0,
-                       projected: it.projected || 0, carry: carryNext, hold: it.hold || 0, w: {} });
+                       projected: it.projected || 0, carry: carryNext, hold: it.hold || 0, w: {}, rel: {}, relDone: {} });
     });
     return m;
   }
@@ -731,10 +738,99 @@
     h += '<tr class="totals"><td class="nm">TOTALS</td><td></td><td></td><td>' + fmt(m.monthly.reduce(function (s, i) { return s + Math.max(0, itemRemaining(i)); }, 0)) + '</td><td style="color:var(--purple)">' + fmt(holds) + '</td><td></td></tr>';
     h += '</table></div><div class="hint">Ang "On hold" ay perang iiwan mo sa bank para sa bill na yan — tap ang amount para i-edit, o tap ang "Hold" button para i-hold agad ang buong unpaid balance. Kapag binayaran mo na ang bill (nailagay mo na sa week cell sa taas), ibaba mo o i-zero ang hold niya.</div></div>';
 
+    // 📤 RELEASE SCHEDULE — her Excel's right-side columns: money to take OUT of the bank each week; light blue = released na
+    function relOf(it) { return it.rel || {}; }
+    function relDoneOf(it) { return it.relDone || {}; }
+    var relAll = m.weekly.concat(m.monthly);
+    var relItems = m.weekly.filter(function (it) {
+      return (+it.alloc || 0) > 0 || Object.keys(relOf(it)).length > 0;
+    }).concat(m.monthly.filter(function (it) {
+      return itemRemaining(it) > 0 || (+it.hold || 0) > 0 || Object.keys(relOf(it)).length > 0;
+    }));
+    var relPlanWk = [], relDoneWk = [];
+    ws.forEach(function (w, i) {
+      var p = 0, dn = 0;
+      relAll.forEach(function (it) {
+        var v = +relOf(it)[i] || 0; p += v;
+        if (relDoneOf(it)[i]) dn += v;
+      });
+      relPlanWk.push(Math.round(p * 100) / 100); relDoneWk.push(Math.round(dn * 100) / 100);
+    });
+    var relPlanTotal = relPlanWk.reduce(function (a, b) { return a + b; }, 0);
+    var relDoneTotal = relDoneWk.reduce(function (a, b) { return a + b; }, 0);
+    var relPending = Math.round((relPlanTotal - relDoneTotal) * 100) / 100;
+    var relThisWk = cw >= 0 ? Math.round((relPlanWk[cw] - relDoneWk[cw]) * 100) / 100 : 0;
+
+    h += '<div class="card gridcard"><div class="gridhead"><div class="t">📤 Release Schedule — Ilalabas sa Bank per Week</div></div>';
+    h += '<div class="statgrid" style="margin:0 0 12px">';
+    if (cw >= 0) {
+      h += '<div class="card stat" style="border-color:#F0DFC0"><div class="lbl">Ilalabas pa this week</div>' +
+           '<div class="val" style="color:#A96F0F">' + fmt(relThisWk) + '</div>' +
+           '<div class="sub2">' + wkLabel(ws[cw]) + ' — hindi pa nailalabas</div></div>';
+    }
+    h += '<div class="card stat" style="border-color:#C7DDF2"><div class="lbl">✅ Nailabas na this month</div>' +
+         '<div class="val" style="color:#2A5E8C">' + fmt(relDoneTotal) + '</div>' +
+         '<div class="sub2">Mga naka-light blue sa ibaba</div></div>';
+    h += '<div class="card stat"><div class="lbl">Kabuuang ilalabas pa (buong buwan)</div>' +
+         '<div class="val neu">' + fmt(relPending) + '</div>' +
+         '<div class="sub2">' + fmt(relPlanTotal) + ' planned − ' + fmt(relDoneTotal) + ' released</div></div>';
+    h += '</div>';
+    h += '<div class="scrollx"><table class="grid"><tr><th class="nm">Bill / Payable</th>';
+    ws.forEach(function (w, i) { h += '<th>W' + (i + 1) + '<br>' + wkLabel(w) + '</th>'; });
+    h += '<th>Total</th></tr>';
+    if (!relItems.length) h += '<tr><td colspan="' + (ws.length + 2) + '"><div class="empty">Walang naka-schedule na ilalabas. I-tap ang kahit anong week cell para maglagay ng amount.</div></td></tr>';
+    relItems.forEach(function (it) {
+      var rel = relOf(it), rd = relDoneOf(it);
+      var sec = m.weekly.indexOf(it) >= 0 ? "weekly" : "monthly";
+      h += '<tr><td class="nm" data-edit="' + sec + '" data-id="' + it.id + '">' + esc(it.name) + (it.due ? '<span class="due">Due: ' + esc(it.due) + '</span>' : '') + '</td>';
+      ws.forEach(function (w, i) {
+        var v = +rel[i] || 0, done = !!rd[i];
+        h += '<td class="relcell' + (done ? " reldone" : "") + (i === cw ? " curwk" : "") + '">' +
+             '<span class="relamt" data-relwk="' + i + '" data-id="' + it.id + '" title="Tap para i-edit ang amount">' + (v ? fmt(v) : "—") + '</span>' +
+             (v ? '<button class="reldot" data-reltog data-wk="' + i + '" data-id="' + it.id + '" title="' + (done ? "Nailabas na — tap para i-unmark" : "Markahang nailabas na (magiging light blue)") + '">✓</button>' : '') +
+             '</td>';
+      });
+      var rowTotal = 0; for (var k in rel) rowTotal += (+rel[k] || 0);
+      h += '<td style="font-weight:700">' + fmt(rowTotal) + '</td></tr>';
+    });
+    h += '<tr class="totals"><td class="nm">TOTAL ILALABAS</td>';
+    ws.forEach(function (w, i) {
+      h += '<td' + (i === cw ? ' style="background:#F3FAF7"' : '') + '>' + fmt(relPlanWk[i]) +
+           (relDoneWk[i] ? '<br><span style="font-size:9.5px;color:#2A5E8C;font-weight:400">✓ ' + fmt(relDoneWk[i]) + ' out na</span>' : '') + '</td>';
+    });
+    h += '<td>' + fmt(relPlanTotal) + '</td></tr>';
+    h += '</table></div><div class="hint">Ito ang plano mo kung magkano ang ilalabas sa holding bank kada linggo. Tap ang amount para i-edit; tap ang ✓ para markahang <b>nailabas/nabayaran na</b> — magiging light blue ang cell, katulad ng ginagawa mo sa Excel.</div></div>';
+
     document.getElementById("viewExp").innerHTML = h;
   }
 
   // ---------- Inline cell editing ----------
+  function findRelItem(id) {
+    var m = M();
+    return m.monthly.filter(function (x) { return x.id === id; })[0] ||
+           m.weekly.filter(function (x) { return x.id === id; })[0];
+  }
+  function beginRelEdit(sp) {
+    var id = sp.getAttribute("data-id"), wk = sp.getAttribute("data-relwk");
+    var it = findRelItem(id);
+    if (!it) return;
+    it.rel = it.rel || {};
+    var cur = +it.rel[wk] || 0;
+    sp.innerHTML = '<input class="cellinput" type="text" inputmode="decimal" value="' + (cur || "") + '">';
+    var inp = sp.querySelector("input");
+    inp.focus(); inp.select();
+    function commit() {
+      var v = parseAmt(inp.value);
+      if (v) it.rel[wk] = v;
+      else { delete it.rel[wk]; if (it.relDone) delete it.relDone[wk]; }
+      save(); renderAll();
+    }
+    inp.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") commit();
+      if (e.key === "Escape") renderAll();
+    });
+    inp.addEventListener("blur", commit);
+  }
   function beginCellEdit(td) {
     var sec = td.getAttribute("data-sec"), id = td.getAttribute("data-id");
     var wk = td.getAttribute("data-wk"), fld = td.getAttribute("data-fld");
@@ -851,6 +947,19 @@
       if (it2) { it2.hold = Math.max(0, itemRemaining(it2)); save(); renderAll(); toast("Naka-hold na ang " + fmt(it2.hold) + " para sa " + it2.name, "", null); }
       return;
     }
+    var rt = e.target.closest("[data-reltog]");
+    if (rt) {
+      var it3 = findRelItem(rt.getAttribute("data-id"));
+      if (it3) {
+        var wk3 = rt.getAttribute("data-wk");
+        it3.relDone = it3.relDone || {};
+        if (it3.relDone[wk3]) delete it3.relDone[wk3]; else it3.relDone[wk3] = true;
+        save(); renderAll();
+      }
+      return;
+    }
+    var ra = e.target.closest(".relamt");
+    if (ra && !ra.querySelector("input")) { beginRelEdit(ra); return; }
     var nm = e.target.closest("td[data-edit]");
     if (nm) { openItemModal(nm.getAttribute("data-edit"), nm.getAttribute("data-id")); return; }
     var cell = e.target.closest("td.cell");
