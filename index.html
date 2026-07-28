@@ -386,10 +386,36 @@
     <div>
       <button class="link-btn" id="btnExport" title="Save a backup file of all your tasks and dailies">⬇ Export backup</button>
       <button class="link-btn" id="btnImport" title="Restore from a backup file">⬆ Import backup</button>
+      <button class="link-btn" id="btnSync" title="Automatically sync your data across devices using your own private GitHub repo">☁ Set up sync</button>
       <input type="file" id="fileInput" accept=".json" style="display:none">
     </div>
   </div>
 
+</div>
+
+<div id="syncModal" style="display:none; position:fixed; inset:0; background:rgba(30,26,46,.5); z-index:60; align-items:center; justify-content:center; padding:16px;">
+  <div style="background:#fff; border-radius:16px; padding:20px; max-width:420px; width:100%; box-shadow:0 8px 32px rgba(0,0,0,.25);">
+    <div style="font-size:16px; font-weight:700; color:var(--heading); margin-bottom:4px;">☁ Auto-sync setup</div>
+    <div style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+      Syncs your data automatically across devices using your own <b>private</b> GitHub repository.
+      Enter the same details on every device you use.
+    </div>
+    <label style="font-size:11px; color:var(--faint); display:block; margin-bottom:3px;">Repository (username/repo-name)</label>
+    <input id="syncRepoInput" type="text" placeholder="e.g. mmsndvl/my-todo-data" autocomplete="off"
+      style="width:100%; font-size:13px; padding:9px 10px; border:1px solid #E2DED4; border-radius:10px; outline:none; margin-bottom:10px;">
+    <label style="font-size:11px; color:var(--faint); display:block; margin-bottom:3px;">Access token (starts with ghp_ or github_pat_)</label>
+    <input id="syncTokenInput" type="password" placeholder="Paste your GitHub token" autocomplete="off"
+      style="width:100%; font-size:13px; padding:9px 10px; border:1px solid #E2DED4; border-radius:10px; outline:none; margin-bottom:6px;">
+    <div style="font-size:11px; color:var(--faint); margin-bottom:14px;">
+      The token stays on this device only. How it works: every change you make is uploaded automatically,
+      and the app downloads the newest copy each time you open it.
+    </div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;">
+      <button id="syncDisconnect" style="font-size:12px; padding:8px 12px; border:none; border-radius:10px; background:#FBEAE9; color:var(--red); cursor:pointer; margin-right:auto;">Turn off sync</button>
+      <button id="syncCancel" style="font-size:12px; padding:8px 14px; border:none; border-radius:10px; background:#EEE; color:var(--muted); cursor:pointer;">Cancel</button>
+      <button id="syncSave" style="font-size:12px; padding:8px 14px; border:none; border-radius:10px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer;">Save & sync</button>
+    </div>
+  </div>
 </div>
 
 <div id="toast"><span id="toastMsg"></span><button id="toastAction"></button></div>
@@ -418,6 +444,7 @@
   var showNotes = true;
   var newPriority = "med", editingId = null, editingDailyId = null, editingRemId = null, expanded = {};
   var lastDeleted = null, lastDeletedDaily = null, lastDeletedRem = null, toastTimer = null;
+  var docUpdatedAt = 0;
   var currentDay = "";
 
   // ---------- Storage ----------
@@ -432,6 +459,7 @@
           dailies = Array.isArray(p.dailies) ? p.dailies : [];
           reminders = Array.isArray(p.reminders) ? p.reminders : [];
           if (p.prefs && typeof p.prefs.showNotes === "boolean") showNotes = p.prefs.showNotes;
+          if (p.updatedAt) docUpdatedAt = p.updatedAt;
         }
       }
     } catch (e) { tasks = []; dailies = []; }
@@ -442,13 +470,18 @@
       return t;
     });
   }
+  function currentDoc() {
+    return { version: 2, tasks: tasks, dailies: dailies, reminders: reminders, prefs: { showNotes: showNotes }, updatedAt: docUpdatedAt };
+  }
   function save() {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ version: 2, tasks: tasks, dailies: dailies, reminders: reminders, prefs: { showNotes: showNotes } }));
+      docUpdatedAt = Date.now();
+      localStorage.setItem(KEY, JSON.stringify(currentDoc()));
       setBadge("✓ Saved on this device", "#E9F2ED", "#3E6B52");
     } catch (e) {
       setBadge("⚠ Could not save — export a backup", "#FBEAE9", "#A33");
     }
+    queuePush();
   }
   function setBadge(text, bg, color) {
     var b = document.getElementById("statusBadge");
@@ -741,6 +774,134 @@
       });
     }
     editingRemId = null; save(); renderRem();
+  }
+
+  // ---------- Auto-sync (uses your own private GitHub repo as storage) ----------
+  var SYNC = { token: null, repo: null, sha: null, timer: null, busy: false, pendingAfterBusy: false };
+  function syncCfgLoad() {
+    try {
+      var c = JSON.parse(localStorage.getItem(KEY + "-sync") || "null");
+      if (c) { SYNC.token = c.token || null; SYNC.repo = c.repo || null; }
+    } catch (e) {}
+  }
+  function syncCfgSave() {
+    localStorage.setItem(KEY + "-sync", JSON.stringify({ token: SYNC.token, repo: SYNC.repo }));
+  }
+  function syncEnabled() { return !!(SYNC.token && SYNC.repo); }
+  function syncApiUrl() { return "https://api.github.com/repos/" + SYNC.repo + "/contents/data.json"; }
+  function syncHeaders() {
+    return { "Authorization": "Bearer " + SYNC.token, "Accept": "application/vnd.github+json", "Content-Type": "application/json" };
+  }
+  function b64encode(str) { return btoa(unescape(encodeURIComponent(str))); }
+  function b64decode(str) { return decodeURIComponent(escape(atob(str.replace(/\s/g, "")))); }
+  function setSyncBadge(state) {
+    if (!syncEnabled()) return;
+    if (state === "syncing") setBadge("☁ Syncing...", "#E7EFF9", "#3D6FB4");
+    else if (state === "synced") setBadge("☁ Synced", "#E9F2ED", "#3E6B52");
+    else if (state === "offline") setBadge("☁ Will sync when online", "#FCF3E3", "#C06014");
+    else if (state === "error") setBadge("⚠ Sync error — check settings", "#FBEAE9", "#A33");
+    updateSyncBtn();
+  }
+  function applyRemote(remote) {
+    tasks = Array.isArray(remote.tasks) ? remote.tasks : [];
+    dailies = Array.isArray(remote.dailies) ? remote.dailies : [];
+    reminders = Array.isArray(remote.reminders) ? remote.reminders : [];
+    if (remote.prefs && typeof remote.prefs.showNotes === "boolean") showNotes = remote.prefs.showNotes;
+    docUpdatedAt = remote.updatedAt || Date.now();
+    tasks = tasks.map(function (t) {
+      if (!t.status) t.status = t.done ? "done" : "not_started";
+      t.done = t.status === "done";
+      return t;
+    });
+    try { localStorage.setItem(KEY, JSON.stringify(currentDoc())); } catch (e) {}
+    var nb = document.getElementById("btnNotes");
+    if (nb) nb.textContent = "🗒 Notes: " + (showNotes ? "On" : "Off");
+    render(); renderDaily(); renderRem();
+  }
+  function syncPull(done) {
+    if (!syncEnabled()) { if (done) done(false); return; }
+    setSyncBadge("syncing");
+    fetch(syncApiUrl(), { headers: syncHeaders() })
+      .then(function (r) {
+        if (r.status === 404) { SYNC.sha = null; return null; }           // first sync: no data.json yet
+        if (r.status === 401 || r.status === 403) { setSyncBadge("error"); throw new Error("auth"); }
+        if (!r.ok) throw new Error("net");
+        return r.json();
+      })
+      .then(function (j) {
+        if (j) {
+          SYNC.sha = j.sha;
+          var remote = JSON.parse(b64decode(j.content));
+          if ((remote.updatedAt || 0) > (docUpdatedAt || 0)) applyRemote(remote);
+          else if ((docUpdatedAt || 0) > (remote.updatedAt || 0)) { queuePush(500); }
+        } else if (docUpdatedAt) {
+          queuePush(500); // nothing in cloud yet — upload what we have
+        }
+        setSyncBadge("synced");
+        if (done) done(true);
+      })
+      .catch(function (e) {
+        if (e && e.message === "auth") { if (done) done(false); return; }
+        setSyncBadge("offline");
+        if (done) done(false);
+      });
+  }
+  function syncPush() {
+    if (!syncEnabled()) return;
+    if (SYNC.busy) { SYNC.pendingAfterBusy = true; return; }
+    SYNC.busy = true;
+    setSyncBadge("syncing");
+    var body = { message: "auto-sync " + new Date().toISOString(), content: b64encode(JSON.stringify(currentDoc())) };
+    if (SYNC.sha) body.sha = SYNC.sha;
+    fetch(syncApiUrl(), { method: "PUT", headers: syncHeaders(), body: JSON.stringify(body) })
+      .then(function (r) {
+        SYNC.busy = false;
+        if (r.status === 409 || r.status === 422) {
+          // Another device updated the cloud copy first — pull it, newest wins, then retry
+          syncPull(function () { queuePush(500); });
+          return null;
+        }
+        if (r.status === 401 || r.status === 403) { setSyncBadge("error"); return null; }
+        if (!r.ok) throw new Error("net");
+        return r.json();
+      })
+      .then(function (j) {
+        if (j && j.content) { SYNC.sha = j.content.sha; setSyncBadge("synced"); }
+        if (SYNC.pendingAfterBusy) { SYNC.pendingAfterBusy = false; queuePush(500); }
+      })
+      .catch(function () { SYNC.busy = false; setSyncBadge("offline"); });
+  }
+  function queuePush(delay) {
+    if (!syncEnabled()) return;
+    clearTimeout(SYNC.timer);
+    SYNC.timer = setTimeout(syncPush, typeof delay === "number" ? delay : 2500);
+  }
+  function updateSyncBtn() {
+    var b = document.getElementById("btnSync");
+    if (b) b.textContent = syncEnabled() ? "☁ Sync: On" : "☁ Set up sync";
+  }
+  function openSyncModal() {
+    document.getElementById("syncRepoInput").value = SYNC.repo || "";
+    document.getElementById("syncTokenInput").value = SYNC.token || "";
+    document.getElementById("syncModal").style.display = "flex";
+  }
+  function closeSyncModal() { document.getElementById("syncModal").style.display = "none"; }
+  function saveSyncSettings() {
+    var repo = document.getElementById("syncRepoInput").value.trim();
+    var token = document.getElementById("syncTokenInput").value.trim();
+    if (!repo || !token) { toast("Fill in both the repository and the token.", "", null); return; }
+    SYNC.repo = repo; SYNC.token = token; SYNC.sha = null;
+    syncCfgSave(); closeSyncModal(); updateSyncBtn();
+    syncPull(function (ok) {
+      if (ok) toast("Auto-sync is on! This device will now stay in sync.", "", null);
+    });
+  }
+  function disconnectSync() {
+    SYNC.repo = null; SYNC.token = null; SYNC.sha = null;
+    localStorage.removeItem(KEY + "-sync");
+    closeSyncModal(); updateSyncBtn();
+    setBadge("✓ Saved on this device", "#E9F2ED", "#3E6B52");
+    toast("Sync turned off. Your data stays on this device.", "", null);
   }
 
   // ---------- Export / Import ----------
@@ -1240,6 +1401,20 @@
 
   document.getElementById("btnClearDone").addEventListener("click", clearDone);
   document.getElementById("btnExport").addEventListener("click", exportBackup);
+  document.getElementById("btnSync").addEventListener("click", openSyncModal);
+  document.getElementById("syncSave").addEventListener("click", saveSyncSettings);
+  document.getElementById("syncCancel").addEventListener("click", closeSyncModal);
+  document.getElementById("syncDisconnect").addEventListener("click", disconnectSync);
+  document.getElementById("syncModal").addEventListener("click", function (e) {
+    if (e.target === this) closeSyncModal();
+  });
+
+  // Automatic sync triggers: when internet returns, and when the app is reopened/brought to front
+  window.addEventListener("online", function () { if (syncEnabled()) syncPull(); });
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && syncEnabled()) syncPull();
+  });
+
   document.getElementById("btnImport").addEventListener("click", function () {
     document.getElementById("fileInput").click();
   });
@@ -1261,10 +1436,13 @@
     navigator.serviceWorker.register("sw.js").catch(function () { /* offline caching unavailable */ });
   }
   load();
+  syncCfgLoad();
   document.getElementById("btnNotes").textContent = "🗒 Notes: " + (showNotes ? "On" : "Off");
   render();
   renderDaily();
   renderRem();
+  updateSyncBtn();
+  if (syncEnabled()) syncPull();
 })();
 </script>
 </body>

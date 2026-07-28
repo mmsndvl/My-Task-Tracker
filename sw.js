@@ -1,5 +1,5 @@
 // Service worker: caches the app so it works offline after the first visit
-var CACHE = "my-todo-tracker-v1";
+var CACHE = "my-todo-tracker-v2";
 var FILES = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", function (e) {
