@@ -595,6 +595,20 @@
     var ws = monthWeeks(curMonth), cw = currentWeekIndex(curMonth);
     var h = '';
 
+    // Quick stats: matitira after expenses (visible agad, no need to open Dashboard)
+    var incAct = incActualTotal(m), expAct = wexpTotal(m) + mexpTotal(m);
+    var wkNet = cw >= 0 ? (incWeek(m, cw) - wexpWeek(m, cw) - mexpWeek(m, cw)) : null;
+    h += '<div class="statgrid" style="margin-top:16px">';
+    if (wkNet !== null) {
+      h += '<div class="card stat"><div class="lbl">Matitira this week</div>' +
+           '<div class="val ' + (wkNet >= 0 ? "pos" : "neg") + '">' + fmt(wkNet) + '</div>' +
+           '<div class="sub2">' + wkLabel(ws[cw]) + '</div></div>';
+    }
+    h += '<div class="card stat"><div class="lbl">Matitira this month so far</div>' +
+         '<div class="val ' + (incAct - expAct >= 0 ? "pos" : "neg") + '">' + fmt(incAct - expAct) + '</div>' +
+         '<div class="sub2">' + fmt(incAct) + ' income − ' + fmt(expAct) + ' expenses</div></div>';
+    h += '</div>';
+
     // Weekly section
     h += '<div class="card gridcard" style="margin-top:16px"><div class="gridhead"><div class="t">🧺 Weekly Expenses</div>' +
          '<button class="btn-mini" data-add="weekly">+ Add</button></div><div class="scrollx"><table class="grid"><tr><th class="nm">Item</th><th>Alloc/wk</th>';
@@ -642,6 +656,25 @@
     ws.forEach(function (w, i) { h += '<td>' + fmt(mexpWeek(m, i)) + '</td>'; });
     h += '<td>' + fmt(mexpTotal(m)) + '</td><td class="' + (mrem > 0 ? "neg" : "pos") + '">' + fmt(mrem) + '</td><td>' + fmt(holdTotal(m)) + '</td></tr>';
     h += '</table></div><div class="hint">Tap any amount to edit. "Carry" = unpaid balance from last month (auto-computed sa new month). "On hold" = perang naka-set aside sa bank para sa item na ito.</div></div>';
+
+    // Net income summary — mirrors the Excel's TOTAL DISBURSEMENTS + NET INCOME rows
+    h += '<div class="card gridcard"><div class="gridhead"><div class="t">💵 Net After Expenses</div></div>' +
+         '<div class="scrollx"><table class="grid"><tr><th class="nm"></th>';
+    ws.forEach(function (w, i) { h += '<th>W' + (i + 1) + '<br>' + wkLabel(w) + '</th>'; });
+    h += '<th>Total</th></tr>';
+    h += '<tr><td class="nm">Income received</td>';
+    ws.forEach(function (w, i) { h += '<td>' + fmt(incWeek(m, i)) + '</td>'; });
+    h += '<td style="font-weight:700">' + fmt(incAct) + '</td></tr>';
+    h += '<tr><td class="nm">Total disbursements (weekly + monthly)</td>';
+    ws.forEach(function (w, i) { h += '<td>' + fmt(wexpWeek(m, i) + mexpWeek(m, i)) + '</td>'; });
+    h += '<td style="font-weight:700">' + fmt(expAct) + '</td></tr>';
+    h += '<tr class="totals"><td class="nm">NET INCOME (matitira)</td>';
+    ws.forEach(function (w, i) {
+      var n = incWeek(m, i) - wexpWeek(m, i) - mexpWeek(m, i);
+      h += '<td class="' + (n >= 0 ? "pos" : "neg") + '"' + (i === cw ? ' style="background:#F3FAF7"' : '') + '>' + fmt(n) + '</td>';
+    });
+    h += '<td class="' + (incAct - expAct >= 0 ? "pos" : "neg") + '">' + fmt(incAct - expAct) + '</td></tr>';
+    h += '</table></div></div>';
 
     document.getElementById("viewExp").innerHTML = h;
   }
