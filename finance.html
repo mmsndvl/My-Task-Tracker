@@ -81,6 +81,8 @@
   .st-over { background: #FBE7E4; color: var(--red); }
   .st-today { background: #FBF1DD; color: #A96F0F; }
   .st-soon { background: #E7EFF9; color: var(--blue); }
+  .st-hold { background: #F1E9F9; color: var(--purple); }
+  .st-unpaid { background: #FBE7E4; color: var(--red); }
   .st-none { background: #F0F3F0; color: var(--faint); }
   td input.cellinput { width: 74px; font-size: 12px; padding: 4px 6px; border: 1px solid var(--accent); border-radius: 7px; outline: none; text-align: right; }
 
@@ -329,13 +331,25 @@
   function itemRemaining(it) { return Math.round(((+it.projected || 0) + (+it.carry || 0) - sumW(it.w)) * 100) / 100; }
   function holdTotal(m) { return m.monthly.reduce(function (s, i) { return s + (+i.hold || 0); }, 0); }
   function dueInfo(it) {
+    // Manual override first (user tapped the status chip)
+    if (it.stat === "paid") return { cls: "st-paid", label: "Paid ✓", sort: 99 };
+    if (it.stat === "hold") return { cls: "st-hold", label: "On hold", sort: 55 };
+    if (it.stat === "unpaid") {
+      var base = autoDue(it, true);
+      if (base && (base.cls === "st-over" || base.cls === "st-today" || base.cls === "st-soon")) return base;
+      return { cls: "st-unpaid", label: "Unpaid", sort: 40 };
+    }
+    return autoDue(it, false);
+  }
+  function autoDue(it, skipPaid) {
     // returns {cls, label, sort} or null
     var rem = itemRemaining(it);
     var target = (+it.projected || 0) + (+it.carry || 0);
-    if (target > 0 && rem <= 0) return { cls: "st-paid", label: "Paid ✓", sort: 99 };
+    if (!skipPaid && target > 0 && rem <= 0) return { cls: "st-paid", label: "Paid ✓", sort: 99 };
     var dayNum = parseInt(String(it.due).replace(/[^0-9]/g, ""), 10);
     var isNum = /^[0-9]+(st|nd|rd|th)?$/i.test(String(it.due).trim());
     if (!it.due || !isNum || !dayNum) {
+      if (skipPaid) return null;
       return it.due ? { cls: "st-none", label: esc(it.due), sort: 60 } : null;
     }
     var p = curMonth.split("-");
@@ -512,8 +526,11 @@
     h += '<div class="card stat"><div class="lbl">Projected leftover (full month)</div>' +
          '<div class="val ' + (projIncome - projExp >= 0 ? "pos" : "neg") + '">' + fmt(projIncome - projExp) + '</div>' +
          '<div class="sub2">' + fmt(projIncome) + ' projected − ' + fmt(projExp) + ' bills</div></div>';
-    h += '<div class="card stat"><div class="lbl">Funds on hold</div><div class="val neu">' + fmt(holds) + '</div>' +
-         '<div class="sub2">Set aside for upcoming dues</div></div>';
+    h += '<div class="card stat"><div class="lbl">Funds on hold</div><div class="val" style="color:var(--purple)">' + fmt(holds) + '</div>' +
+         '<div class="sub2">🔒 Iiwan sa bank para sa bills</div></div>';
+    h += '<div class="card stat"><div class="lbl">Safe i-withdraw / ilipat</div>' +
+         '<div class="val ' + (netMonth - holds >= 0 ? "pos" : "neg") + '">' + fmt(netMonth - holds) + '</div>' +
+         '<div class="sub2">Net so far − funds on hold</div></div>';
     h += '<div class="card stat" style="cursor:pointer" id="bankStat"><div class="lbl">' + esc(state.bank.name || "Bank balance") + ' (tap to edit)</div>' +
          '<div class="val neu">' + (state.bank.amount === null ? "—" : fmt(state.bank.amount)) + '</div>' +
          '<div class="sub2">Your own note — update anytime</div></div>';
@@ -562,9 +579,7 @@
   }
 
   // ---------- Render: Income ----------
-  function renderInc() {
-    var m = M(); if (!m) return;
-    var ws = monthWeeks(curMonth), cw = currentWeekIndex(curMonth);
+  function incomeGridHTML(m, ws, cw) {
     var h = '<div class="card gridcard" style="margin-top:16px"><div class="gridhead"><div class="t">💰 Income — ' + ymLabel(curMonth) + '</div>' +
             '<button class="btn-mini" data-add="incomes">+ Add source</button></div><div class="scrollx"><table class="grid"><tr><th class="nm">Source</th><th>Projected</th>';
     ws.forEach(function (w, i) { h += '<th>W' + (i + 1) + '<br>' + wkLabel(w) + '</th>'; });
@@ -580,13 +595,17 @@
       });
       h += '<td style="font-weight:700">' + fmt(act) + '</td><td class="' + (diff >= 0 ? "pos" : "neg") + '">' + fmt(diff) + '</td></tr>';
     });
-    // totals
     h += '<tr class="totals"><td class="nm">TOTAL INCOME</td><td>' + fmt(incProjTotal(m)) + '</td>';
     ws.forEach(function (w, i) { h += '<td>' + fmt(incWeek(m, i)) + '</td>'; });
     var iat = incActualTotal(m);
     h += '<td>' + fmt(iat) + '</td><td class="' + (iat - incProjTotal(m) >= 0 ? "pos" : "neg") + '">' + fmt(iat - incProjTotal(m)) + '</td></tr>';
     h += '</table></div><div class="hint">Tap any amount to edit it. Tap a name to rename or delete.</div></div>';
-    document.getElementById("viewInc").innerHTML = h;
+    return h;
+  }
+  function renderInc() {
+    var m = M(); if (!m) return;
+    var ws = monthWeeks(curMonth), cw = currentWeekIndex(curMonth);
+    document.getElementById("viewInc").innerHTML = incomeGridHTML(m, ws, cw);
   }
 
   // ---------- Render: Expenses ----------
@@ -609,10 +628,13 @@
          '<div class="sub2">' + fmt(incAct) + ' income − ' + fmt(expAct) + ' expenses</div></div>';
     h += '</div>';
 
+    // Income visible dito rin, para kumpleto ang view sa isang page
+    h += incomeGridHTML(m, ws, cw);
+
     // Weekly section
-    h += '<div class="card gridcard" style="margin-top:16px"><div class="gridhead"><div class="t">🧺 Weekly Expenses</div>' +
+    h += '<div class="card gridcard"><div class="gridhead"><div class="t">🧺 Weekly Expenses</div>' +
          '<button class="btn-mini" data-add="weekly">+ Add</button></div><div class="scrollx"><table class="grid"><tr><th class="nm">Item</th><th>Alloc/wk</th>';
-    ws.forEach(function (w, i) { h += '<th>W' + (i + 1) + '</th>'; });
+    ws.forEach(function (w, i) { h += '<th>W' + (i + 1) + '<br>' + wkLabel(w) + '</th>'; });
     h += '<th>Total</th></tr>';
     if (!m.weekly.length) h += '<tr><td colspan="' + (ws.length + 3) + '"><div class="empty">No weekly expenses yet.</div></td></tr>';
     m.weekly.forEach(function (it) {
@@ -630,15 +652,16 @@
 
     // Monthly section
     h += '<div class="card gridcard"><div class="gridhead"><div class="t">🏠 Monthly Expenses & Installments</div>' +
-         '<button class="btn-mini" data-add="monthly">+ Add</button></div><div class="scrollx"><table class="grid"><tr><th class="nm">Item</th><th>Status</th><th>Carry</th><th>Projected</th>';
-    ws.forEach(function (w, i) { h += '<th>W' + (i + 1) + '</th>'; });
+         '<button class="btn-mini" data-add="monthly">+ Add</button></div><div class="scrollx"><table class="grid"><tr><th class="nm">Item</th><th>Status<br><span style="font-weight:400;text-transform:none">(tap to change)</span></th><th>Carry</th><th>Projected</th>';
+    ws.forEach(function (w, i) { h += '<th>W' + (i + 1) + '<br>' + wkLabel(w) + '</th>'; });
     h += '<th>Paid</th><th>Remaining</th><th>On hold</th></tr>';
     if (!m.monthly.length) h += '<tr><td colspan="' + (ws.length + 7) + '"><div class="empty">No monthly expenses yet.</div></td></tr>';
     m.monthly.forEach(function (it) {
       var paid = sumW(it.w), rem = itemRemaining(it);
       var info = dueInfo(it);
       h += '<tr><td class="nm" data-edit="monthly" data-id="' + it.id + '">' + esc(it.name) + (it.due ? '<span class="due">Due: ' + esc(it.due) + '</span>' : '') + '</td>';
-      h += '<td>' + (info ? '<span class="st ' + info.cls + '">' + info.label + '</span>' : '—') + '</td>';
+      h += '<td style="cursor:pointer" data-cyclestat="' + it.id + '" title="Tap to change: Auto → Paid → On hold → Unpaid">' +
+           (info ? '<span class="st ' + info.cls + '">' + info.label + '</span>' : '<span class="st st-none">—</span>') + '</td>';
       h += '<td class="cell ' + ((+it.carry || 0) ? "" : "zero") + '" data-fld="carry" data-sec="monthly" data-id="' + it.id + '">' + ((+it.carry || 0) ? fmt(+it.carry) : "—") + '</td>';
       h += '<td class="cell" data-fld="projected" data-sec="monthly" data-id="' + it.id + '">' + fmt(+it.projected || 0) + '</td>';
       ws.forEach(function (w, i) {
@@ -675,6 +698,38 @@
     });
     h += '<td class="' + (incAct - expAct >= 0 ? "pos" : "neg") + '">' + fmt(incAct - expAct) + '</td></tr>';
     h += '</table></div></div>';
+
+    // 🏦 FUNDS PLANNER — her Excel's "Payables – Pending Disbursement": what to LEAVE in the bank vs what's safe to withdraw
+    var netSoFar = incAct - expAct;
+    var holds = holdTotal(m);
+    var withdrawable = Math.round((netSoFar - holds) * 100) / 100;
+    h += '<div class="card gridcard"><div class="gridhead"><div class="t">🏦 Funds Planner — Iwan sa Bank vs. Pwedeng I-withdraw</div></div>';
+    h += '<div class="statgrid" style="margin:0 0 12px">';
+    h += '<div class="card stat" style="border-color:#D9C7F0"><div class="lbl">🔒 Iiwan sa bank (naka-hold para sa bills)</div>' +
+         '<div class="val" style="color:var(--purple)">' + fmt(holds) + '</div>' +
+         '<div class="sub2">Total ng lahat ng "On hold" sa ibaba</div></div>';
+    h += '<div class="card stat" style="border-color:#BFE0D0"><div class="lbl">💸 Safe i-withdraw / ilipat sa other bank</div>' +
+         '<div class="val ' + (withdrawable >= 0 ? "pos" : "neg") + '">' + fmt(withdrawable) + '</div>' +
+         '<div class="sub2">Net na natitira ' + fmt(netSoFar) + ' − naka-hold ' + fmt(holds) + '</div></div>';
+    h += '</div>';
+    h += '<div class="scrollx"><table class="grid"><tr><th class="nm">Bill / Payable</th><th>Due</th><th>Status</th><th>Unpaid balance</th><th>On hold sa bank</th><th></th></tr>';
+    var anyRows = false;
+    m.monthly.forEach(function (it) {
+      var rem = itemRemaining(it);
+      var hv = +it.hold || 0;
+      if (rem <= 0 && hv <= 0) return;   // fully paid & nothing held — hidden here
+      anyRows = true;
+      var info = dueInfo(it);
+      h += '<tr><td class="nm" data-edit="monthly" data-id="' + it.id + '">' + esc(it.name) + '</td>';
+      h += '<td style="text-align:right">' + (it.due ? esc(it.due) : "—") + '</td>';
+      h += '<td>' + (info ? '<span class="st ' + info.cls + '">' + info.label + '</span>' : '—') + '</td>';
+      h += '<td class="' + (rem > 0 ? "neg" : "pos") + '" style="font-weight:700">' + fmt(rem) + '</td>';
+      h += '<td class="cell ' + (hv ? "" : "zero") + '" data-fld="hold" data-sec="monthly" data-id="' + it.id + '" style="font-weight:700;color:var(--purple)">' + (hv ? fmt(hv) : "—") + '</td>';
+      h += '<td>' + (rem > 0 && Math.abs(hv - rem) > 0.01 ? '<button class="btn-mini" style="background:#F1E9F9;color:var(--purple);font-size:10px;padding:4px 8px" data-holdall="' + it.id + '" title="I-hold ang buong unpaid balance">Hold ' + fmt(rem) + '</button>' : '') + '</td></tr>';
+    });
+    if (!anyRows) h += '<tr><td colspan="6"><div class="empty">Lahat bayad na at walang naka-hold. 🎉</div></td></tr>';
+    h += '<tr class="totals"><td class="nm">TOTALS</td><td></td><td></td><td>' + fmt(m.monthly.reduce(function (s, i) { return s + Math.max(0, itemRemaining(i)); }, 0)) + '</td><td style="color:var(--purple)">' + fmt(holds) + '</td><td></td></tr>';
+    h += '</table></div><div class="hint">Ang "On hold" ay perang iiwan mo sa bank para sa bill na yan — tap ang amount para i-edit, o tap ang "Hold" button para i-hold agad ang buong unpaid balance. Kapag binayaran mo na ang bill (nailagay mo na sa week cell sa taas), ibaba mo o i-zero ang hold niya.</div></div>';
 
     document.getElementById("viewExp").innerHTML = h;
   }
@@ -780,6 +835,22 @@
   document.addEventListener("click", function (e) {
     var add = e.target.closest("[data-add]");
     if (add) { openItemModal(add.getAttribute("data-add"), null); return; }
+    var cyc = e.target.closest("[data-cyclestat]");
+    if (cyc) {
+      var m1 = M(); var it1 = m1.monthly.filter(function (x) { return x.id === cyc.getAttribute("data-cyclestat"); })[0];
+      if (it1) {
+        var order = ["", "paid", "hold", "unpaid"];
+        it1.stat = order[(order.indexOf(it1.stat || "") + 1) % order.length];
+        save(); renderAll();
+      }
+      return;
+    }
+    var ha = e.target.closest("[data-holdall]");
+    if (ha) {
+      var m2 = M(); var it2 = m2.monthly.filter(function (x) { return x.id === ha.getAttribute("data-holdall"); })[0];
+      if (it2) { it2.hold = Math.max(0, itemRemaining(it2)); save(); renderAll(); toast("Naka-hold na ang " + fmt(it2.hold) + " para sa " + it2.name, "", null); }
+      return;
+    }
     var nm = e.target.closest("td[data-edit]");
     if (nm) { openItemModal(nm.getAttribute("data-edit"), nm.getAttribute("data-id")); return; }
     var cell = e.target.closest("td.cell");
