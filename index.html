@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My To-Do List</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="My To-Do">
+<meta name="theme-color" content="#6C5CE7">
+<style>
+  :root {
+    --bg: #F4F2EC; --card: #FFFFFF; --ink: #2B2440; --heading: #3B2F63;
+    --muted: #7A7488; --faint: #9B93AD; --line: #EEEAE0;
+    --accent: #6C5CE7; --gold: #E8A33D; --green: #5B8C6E; --red: #D9534F;
+    --work: #4A6FA5; --personal: #A5674A;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 32px 16px 80px; }
+
+  /* Header */
+  .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  h1 { color: var(--heading); font-size: 28px; letter-spacing: -0.5px; }
+  .tagline { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
+    padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+    background: #E9F2ED; color: #3E6B52;
+  }
+
+  /* Main view switcher */
+  .view-tabs { display: flex; gap: 8px; margin-top: 18px; }
+  .view-tab {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 12px; border-radius: 14px; border: 1px solid var(--line);
+    background: #fff; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .view-tab.active { background: var(--heading); border-color: var(--heading); color: #fff; }
+  .view-tab .sub { font-size: 10px; font-weight: 400; opacity: .75; }
+
+  /* Progress */
+  .progress-row { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin: 18px 0 6px; }
+  .bar { height: 8px; background: #fff; border-radius: 999px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,.06); }
+  .bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--gold)); transition: width .5s; width: 0; }
+
+  /* Card */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 1px 3px rgba(59,47,99,.05); }
+
+  /* Quick add */
+  .adder { padding: 12px; margin: 20px 0; }
+  .adder-row { display: flex; gap: 8px; }
+  .adder input[type=text] {
+    flex: 1; padding: 11px 12px; border-radius: 12px; border: 1px solid transparent;
+    background: #F7F5F0; font-size: 14px; color: var(--ink); outline: none;
+  }
+  .adder input[type=text]:focus { border-color: #C9BEF5; background: #fff; }
+  .btn-add {
+    display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px;
+    background: var(--accent); color: #fff; border: none; border-radius: 12px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .btn-add:disabled { opacity: .4; cursor: default; }
+  .opt-toggle { background: none; border: none; color: var(--faint); font-size: 11px; margin-top: 8px; cursor: pointer; padding: 2px 4px; }
+  .options { display: none; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .options.open { display: flex; }
+  .pri-btn {
+    font-size: 11px; padding: 6px 10px; border-radius: 8px; cursor: pointer;
+    border: 1px solid #EEE; background: #fff; color: var(--faint);
+  }
+  .pri-btn.sel-urgent { background: #FBE3E1; color: #B3261E; border-color: #B3261E; font-weight: 700; }
+  .pri-btn.sel-high { background: #FBEAE9; color: var(--red); border-color: var(--red); }
+  .pri-btn.sel-med  { background: #FCF3E3; color: var(--gold); border-color: var(--gold); }
+  .pri-btn.sel-low  { background: #E9F2ED; color: var(--green); border-color: var(--green); }
+  .options input, .options textarea {
+    font-size: 12px; padding: 7px 10px; border-radius: 8px; border: 1px solid #E2DED4; outline: none;
+    font-family: inherit; color: var(--ink);
+  }
+  .options input:focus, .options textarea:focus { border-color: #C9BEF5; }
+  .options textarea { width: 100%; resize: vertical; min-height: 44px; }
+
+  /* Toolbar */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .tabs { display: flex; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
+  .tab { border: none; background: none; font-size: 12px; padding: 6px 12px; border-radius: 8px; color: var(--muted); cursor: pointer; }
+  .tab.active { background: var(--accent); color: #fff; }
+  .searchbox {
+    flex: 1; min-width: 140px; display: flex; align-items: center; gap: 6px;
+    background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 6px 12px;
+  }
+  .searchbox input { border: none; outline: none; font-size: 12px; width: 100%; background: transparent; color: var(--ink); }
+  .btn-sort {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    font-size: 12px; color: var(--muted); padding: 6px 12px; cursor: pointer;
+  }
+
+  /* Category chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .chip {
+    font-size: 11px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+    border: 1px solid #E5E1D8; background: #fff; color: var(--muted);
+  }
+  .chip.active { background: var(--heading); border-color: var(--heading); color: #fff; }
+
+  /* Tasks */
+  .task {
+    display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px;
+    margin-bottom: 8px; border-left-width: 4px; border-left-style: solid;
+  }
+  .task.done { opacity: .6; }
+  .check {
+    width: 20px; height: 20px; min-width: 20px; margin-top: 2px; border-radius: 50%;
+    border: 2px solid #C9C2DA; background: #fff; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 11px; color: #fff;
+  }
+  .task.done .check, .drow.done .check { background: var(--green); border-color: var(--green); }
+  .task-body { flex: 1; min-width: 0; }
+  .task-text { font-size: 14px; cursor: text; word-break: break-word; }
+  .task.done .task-text { text-decoration: line-through; color: var(--faint); }
+  .task-notes {
+    margin-top: 6px; font-size: 12px; background: #F8F6FE; color: var(--muted);
+    padding: 6px 10px; border-radius: 8px; white-space: pre-wrap; cursor: pointer; word-break: break-word;
+  }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; align-items: center; }
+  .meta .pri { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; cursor: pointer; border: none; }
+  .status-chip { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; cursor: pointer; border: none; font-weight: 600; }
+  .notes-link { background: none; border: none; font-size: 10.5px; color: #3D6FB4; cursor: pointer; padding: 2px 4px; }
+  .notes-link:hover { text-decoration: underline; }
+  .pri.urgent { background: #FBE3E1; color: #B3261E; font-weight: 700; }
+  .pri.high { background: #FBEAE9; color: var(--red); }
+  .pri.med  { background: #FCF3E3; color: var(--gold); }
+  .pri.low  { background: #E9F2ED; color: var(--green); }
+  .meta .tagchip, .meta .duechip { font-size: 10.5px; color: var(--faint); }
+  .duechip.urgent { color: var(--gold); font-weight: 600; }
+  .duechip.overdue { color: var(--red); font-weight: 600; }
+  .task-actions { display: flex; gap: 2px; }
+  .icon-btn { background: none; border: none; cursor: pointer; padding: 6px; border-radius: 8px; color: var(--faint); font-size: 13px; }
+  .icon-btn:hover { background: #F5F3EE; }
+  .icon-btn.del:hover { background: #FBEAE9; color: var(--red); }
+
+  /* Edit mode */
+  .edit-box { display: flex; flex-direction: column; gap: 6px; }
+  .edit-box input, .edit-box textarea {
+    font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid #C9BEF5;
+    outline: none; font-family: inherit; color: var(--ink); width: 100%;
+  }
+  .edit-box textarea { resize: vertical; min-height: 40px; font-size: 12px; }
+  .edit-actions { display: flex; gap: 6px; }
+  .edit-actions button { font-size: 12px; padding: 5px 12px; border-radius: 8px; border: none; cursor: pointer; }
+  .btn-save { background: var(--green); color: #fff; }
+  .btn-cancel { background: #EEE; color: var(--muted); }
+
+  /* ===== Daily view ===== */
+  .daily-head { margin: 20px 0 4px; }
+  .daily-date { font-size: 15px; font-weight: 700; color: var(--heading); }
+  .daily-hint { font-size: 11px; color: var(--faint); margin-top: 2px; }
+  .group { margin-top: 16px; padding: 14px; }
+  .group-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .group-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
+  .group-title .dot { width: 10px; height: 10px; border-radius: 3px; }
+  .group.work .dot { background: var(--work); }
+  .group.personal .dot { background: var(--personal); }
+  .group.work .group-title { color: var(--work); }
+  .group.personal .group-title { color: var(--personal); }
+  .group-count { font-size: 11px; color: var(--faint); }
+  .drow {
+    display: flex; align-items: flex-start; gap: 10px; padding: 9px 6px;
+    border-bottom: 1px solid #F3F0E9;
+  }
+  .drow:last-of-type { border-bottom: none; }
+  .drow .dtext { flex: 1; font-size: 13.5px; word-break: break-word; padding-top: 1px; }
+  .drow.done .dtext { text-decoration: line-through; color: var(--faint); }
+  .streak {
+    font-size: 10.5px; color: #C06014; background: #FDF0E3;
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap; margin-top: 1px;
+  }
+  .drow .task-actions { opacity: .85; }
+  .dadd { display: flex; gap: 6px; margin-top: 10px; }
+  .dadd input {
+    flex: 1; font-size: 12.5px; padding: 8px 10px; border-radius: 10px;
+    border: 1px dashed #D8D2C4; background: #FBFAF6; outline: none; color: var(--ink);
+  }
+  .dadd input:focus { border-color: #C9BEF5; border-style: solid; background: #fff; }
+  .dadd button {
+    border: none; border-radius: 10px; padding: 8px 14px; font-size: 12.5px; font-weight: 600;
+    cursor: pointer; color: #fff;
+  }
+  .group.work .dadd button { background: var(--work); }
+  .group.personal .dadd button { background: var(--personal); }
+  .dempty { font-size: 12px; color: var(--faint); padding: 10px 6px; }
+  .daily-done-msg {
+    margin-top: 14px; text-align: center; font-size: 13px; color: var(--green);
+    background: #E9F2ED; border-radius: 12px; padding: 10px;
+  }
+
+  /* Reminders */
+  .rem-section { margin-top: 16px; }
+  .rem-section-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; letter-spacing: .3px; }
+  .rem-section.overdue .rem-section-title { color: var(--red); }
+  .rem-section.today .rem-section-title { color: #C06014; }
+  .rem-section.upcoming .rem-section-title { color: var(--muted); }
+  .rem-row {
+    display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; margin-bottom: 8px;
+    border-left-width: 4px; border-left-style: solid; border-left-color: #C9C2DA;
+  }
+  .rem-section.overdue .rem-row { border-left-color: var(--red); }
+  .rem-section.today .rem-row { border-left-color: var(--gold); }
+  .rem-when { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; background: #F0EEE8; color: var(--muted); white-space: nowrap; }
+  .rem-when.hot { background: #FCF3E3; color: #C06014; font-weight: 700; }
+  .rem-when.late { background: #FBEAE9; color: var(--red); font-weight: 700; }
+  .rem-repeat { font-size: 10.5px; color: var(--faint); }
+
+  /* Empty state */
+  .empty {
+    text-align: center; padding: 56px 20px; background: #fff;
+    border: 1px dashed #DDD8CC; border-radius: 16px; color: var(--faint);
+  }
+  .empty .big { font-size: 30px; margin-bottom: 10px; }
+  .empty .t1 { font-size: 14px; font-weight: 600; color: var(--heading); }
+  .empty .t2 { font-size: 12px; margin-top: 4px; }
+
+  /* Footer */
+  .footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 16px; }
+  .link-btn { background: none; border: none; font-size: 11px; color: var(--faint); cursor: pointer; padding: 6px 10px; border-radius: 8px; }
+  .link-btn:hover { background: #fff; }
+
+  /* Toast */
+  #toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    background: #1E1A2E; color: #fff; font-size: 13px; padding: 10px 16px;
+    border-radius: 12px; display: none; align-items: center; gap: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.25); max-width: 90vw; z-index: 50;
+  }
+  #toast.show { display: flex; }
+  #toast button { background: none; border: none; color: var(--gold); font-weight: 700; cursor: pointer; font-size: 13px; }
+
+  @media (max-width: 480px) {
+    h1 { font-size: 23px; }
+    .wrap { padding-top: 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div>
+      <h1>My To-Do List</h1>
+      <p class="tagline">Remembered something? Type it in before you forget.</p>
+    </div>
+    <span class="badge" id="statusBadge">✓ Saved on this device</span>
+  </div>
+
+  <div class="view-tabs">
+    <button class="view-tab active" data-view="tasks" id="vtTasks">📝 Tasks <span class="sub" id="vtTasksSub"></span></button>
+    <button class="view-tab" data-view="daily" id="vtDaily">🔁 Daily <span class="sub" id="vtDailySub"></span></button>
+    <button class="view-tab" data-view="rem" id="vtRem">🔔 Reminders <span class="sub" id="vtRemSub"></span></button>
+  </div>
+
+  <!-- ============ TASKS VIEW ============ -->
+  <div id="viewTasks">
+    <div id="progressWrap" style="display:none">
+      <div class="progress-row"><span id="progressText"></span><span id="progressPct"></span></div>
+      <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+    </div>
+
+    <div class="card adder">
+      <div class="adder-row">
+        <input type="text" id="newText" placeholder="e.g. pay the electric bill, call Mom..." autocomplete="off">
+        <button class="btn-add" id="btnAdd" disabled>+ Add</button>
+      </div>
+      <button class="opt-toggle" id="optToggle">▾ Priority · Category · Due date · Notes</button>
+      <div class="options" id="options">
+        <button class="pri-btn" data-pri="urgent">🚨 Urgent</button>
+        <button class="pri-btn" data-pri="high">⚑ Important</button>
+        <button class="pri-btn sel-med" data-pri="med">⚑ Normal</button>
+        <button class="pri-btn" data-pri="low">⚑ Low key</button>
+        <input type="text" id="newCat" placeholder="Category (e.g. Home)" list="catList" style="width:150px">
+        <datalist id="catList"></datalist>
+        <input type="date" id="newDue">
+        <textarea id="newNotes" rows="2" placeholder="Notes or details (optional) — e.g. account number, address, links, steps..."></textarea>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <div class="tabs">
+        <button class="tab active" data-filter="active">To do</button>
+        <button class="tab" data-filter="all">All</button>
+        <button class="tab" data-filter="done">Done</button>
+      </div>
+      <div class="searchbox">🔍 <input type="text" id="search" placeholder="Search..."></div>
+      <button class="btn-sort" id="btnSort" title="Change sort order">⇅ Newest</button>
+      <select class="btn-sort" id="statusFilter" title="Filter by status">
+        <option value="">Status: All</option>
+        <option value="not_started">Not started</option>
+        <option value="in_progress">In progress</option>
+        <option value="waiting">Waiting</option>
+        <option value="done">Done</option>
+      </select>
+      <button class="btn-sort" id="btnNotes" title="Show or hide all notes">🗒 Notes: On</button>
+    </div>
+
+    <div class="chips" id="chips"></div>
+    <div id="list"></div>
+
+    <div class="footer">
+      <div></div>
+      <button class="link-btn" id="btnClearDone" style="display:none"></button>
+    </div>
+  </div>
+
+  <!-- ============ DAILY VIEW ============ -->
+  <div id="viewDaily" style="display:none">
+    <div class="daily-head">
+      <div class="daily-date" id="dailyDate"></div>
+      <div class="daily-hint">These repeat every day — checks reset automatically each morning. 🔥 shows your streak of consecutive days.</div>
+    </div>
+
+    <div id="dailyProgressWrap" style="display:none">
+      <div class="progress-row"><span id="dailyProgressText"></span><span id="dailyProgressPct"></span></div>
+      <div class="bar"><div class="bar-fill" id="dailyBarFill"></div></div>
+    </div>
+
+    <div class="card group work">
+      <div class="group-head">
+        <div class="group-title"><span class="dot"></span> Work</div>
+        <span class="group-count" id="workCount"></span>
+      </div>
+      <div id="workList"></div>
+      <div class="dadd">
+        <input type="text" id="newWork" placeholder="Add a daily work routine — e.g. check emails, update report..." autocomplete="off">
+        <button data-addgroup="work">+ Add</button>
+      </div>
+    </div>
+
+    <div class="card group personal">
+      <div class="group-head">
+        <div class="group-title"><span class="dot"></span> Personal</div>
+        <span class="group-count" id="personalCount"></span>
+      </div>
+      <div id="personalList"></div>
+      <div class="dadd">
+        <input type="text" id="newPersonal" placeholder="Add a daily personal routine — e.g. drink water, exercise..." autocomplete="off">
+        <button data-addgroup="personal">+ Add</button>
+      </div>
+    </div>
+
+    <div id="dailyAllDone" style="display:none" class="daily-done-msg"></div>
+  </div>
+
+  <!-- ============ REMINDERS VIEW ============ -->
+  <div id="viewRem" style="display:none">
+    <div class="daily-head">
+      <div class="daily-date">🔔 Don't forget</div>
+      <div class="daily-hint">For dates you can't afford to miss — bills, birthdays, renewals, appointments. Repeating reminders come back automatically after you check them off.</div>
+    </div>
+
+    <div class="card adder">
+      <div class="adder-row">
+        <input type="text" id="remText" placeholder="e.g. pay rent, Mama's birthday, dentist appointment..." autocomplete="off">
+        <button class="btn-add" id="btnAddRem" disabled>+ Add</button>
+      </div>
+      <div class="options open" style="display:flex; margin-top:10px; padding-top:10px; border-top:1px solid var(--line)">
+        <input type="date" id="remDate">
+        <input type="time" id="remTime" title="Time (optional)">
+        <select id="remRepeat" class="btn-sort">
+          <option value="none">One-time</option>
+          <option value="weekly">Every week</option>
+          <option value="monthly">Every month</option>
+          <option value="yearly">Every year</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="remList"></div>
+  </div>
+
+  <div class="footer">
+    <div>
+      <button class="link-btn" id="btnExport" title="Save a backup file of all your tasks and dailies">⬇ Export backup</button>
+      <button class="link-btn" id="btnImport" title="Restore from a backup file">⬆ Import backup</button>
+      <input type="file" id="fileInput" accept=".json" style="display:none">
+    </div>
+  </div>
+
+</div>
+
+<div id="toast"><span id="toastMsg"></span><button id="toastAction"></button></div>
+
+<script>
+(function () {
+  var KEY = "my-todo-tracker-v1";
+  var PRI = {
+    urgent: { label: "🚨 Urgent", cls: "urgent" },
+    high: { label: "Important", cls: "high" },
+    med:  { label: "Normal",    cls: "med"  },
+    low:  { label: "Low key",   cls: "low"  }
+  };
+  var PRI_COLOR = { urgent: "#B3261E", high: "#D9534F", med: "#E8A33D", low: "#5B8C6E" };
+  var STATUS = {
+    not_started: { label: "Not started", color: "#7A7488", bg: "#F0EEE8" },
+    in_progress: { label: "In progress", color: "#3D6FB4", bg: "#E7EFF9" },
+    waiting:     { label: "Waiting",     color: "#8A5BB8", bg: "#F1E9F9" },
+    done:        { label: "Done",        color: "#3E6B52", bg: "#E9F2ED" }
+  };
+  var S_ORDER = ["not_started", "in_progress", "waiting", "done"];
+
+  var tasks = [], dailies = [], reminders = [];
+  var view = "tasks";
+  var filter = "active", catFilter = null, search = "", sortBy = "created", statusFilter = "";
+  var showNotes = true;
+  var newPriority = "med", editingId = null, editingDailyId = null, editingRemId = null, expanded = {};
+  var lastDeleted = null, lastDeletedDaily = null, lastDeletedRem = null, toastTimer = null;
+  var currentDay = "";
+
+  // ---------- Storage ----------
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) {
+        var p = JSON.parse(raw);
+        if (Array.isArray(p)) { tasks = p; }                    // old format
+        else if (p && typeof p === "object") {
+          tasks = Array.isArray(p.tasks) ? p.tasks : [];
+          dailies = Array.isArray(p.dailies) ? p.dailies : [];
+          reminders = Array.isArray(p.reminders) ? p.reminders : [];
+          if (p.prefs && typeof p.prefs.showNotes === "boolean") showNotes = p.prefs.showNotes;
+        }
+      }
+    } catch (e) { tasks = []; dailies = []; }
+    // Migration: give every task a status (old tasks only had done true/false)
+    tasks = tasks.map(function (t) {
+      if (!t.status) t.status = t.done ? "done" : "not_started";
+      t.done = t.status === "done";
+      return t;
+    });
+  }
+  function save() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ version: 2, tasks: tasks, dailies: dailies, reminders: reminders, prefs: { showNotes: showNotes } }));
+      setBadge("✓ Saved on this device", "#E9F2ED", "#3E6B52");
+    } catch (e) {
+      setBadge("⚠ Could not save — export a backup", "#FBEAE9", "#A33");
+    }
+  }
+  function setBadge(text, bg, color) {
+    var b = document.getElementById("statusBadge");
+    b.textContent = text; b.style.background = bg; b.style.color = color;
+  }
+
+  // ---------- Helpers ----------
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function esc(s) {
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+  function pad(n) { return n < 10 ? "0" + n : "" + n; }
+  function dateStr(d) { return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate()); }
+  function todayStr() { return dateStr(new Date()); }
+  function doneToday(item) { return !!(item.doneDates && item.doneDates[todayStr()]); }
+  function streak(item) {
+    if (!item.doneDates) return 0;
+    var d = new Date(); d.setHours(0,0,0,0);
+    if (!item.doneDates[dateStr(d)]) d.setDate(d.getDate() - 1); // count up to yesterday if not done yet today
+    var s = 0;
+    while (item.doneDates[dateStr(d)]) { s++; d.setDate(d.getDate() - 1); }
+    return s;
+  }
+  function formatDue(due) {
+    if (!due) return null;
+    var d = new Date(due + "T00:00:00");
+    var today = new Date(); today.setHours(0,0,0,0);
+    var diff = Math.round((d - today) / 86400000);
+    if (diff === 0) return { text: "Today", cls: "urgent" };
+    if (diff === 1) return { text: "Tomorrow", cls: "urgent" };
+    if (diff < 0) return { text: "Overdue (" + Math.abs(diff) + "d)", cls: "overdue" };
+    if (diff <= 7) return { text: "In " + diff + " days", cls: "" };
+    var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return { text: months[d.getMonth()] + " " + d.getDate(), cls: "" };
+  }
+  function toast(msg, actionLabel, actionFn) {
+    var t = document.getElementById("toast");
+    document.getElementById("toastMsg").textContent = msg;
+    var a = document.getElementById("toastAction");
+    a.textContent = actionLabel || "";
+    a.style.display = actionLabel ? "inline" : "none";
+    a.onclick = function () { if (actionFn) actionFn(); hideToast(); };
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(hideToast, 6000);
+  }
+  function hideToast() { document.getElementById("toast").classList.remove("show"); }
+
+  // ---------- Task actions ----------
+  function addTask() {
+    var input = document.getElementById("newText");
+    var text = input.value.trim();
+    if (!text) return;
+    tasks.unshift({
+      id: uid(), text: text, done: false, status: "not_started", priority: newPriority,
+      category: document.getElementById("newCat").value.trim() || null,
+      due: document.getElementById("newDue").value || null,
+      notes: document.getElementById("newNotes").value.trim() || null,
+      createdAt: Date.now()
+    });
+    input.value = ""; document.getElementById("newDue").value = "";
+    document.getElementById("newNotes").value = "";
+    document.getElementById("btnAdd").disabled = true;
+    save(); render(); input.focus();
+  }
+  function toggleDone(id) {
+    tasks = tasks.map(function (t) {
+      if (t.id !== id) return t;
+      var nowDone = !t.done;
+      return Object.assign({}, t, {
+        done: nowDone,
+        status: nowDone ? "done" : "not_started",
+        doneAt: nowDone ? Date.now() : null
+      });
+    });
+    save(); render();
+  }
+  function toggleTaskNotes(id) {
+    tasks = tasks.map(function (t) {
+      return t.id === id ? Object.assign({}, t, { notesHidden: !t.notesHidden }) : t;
+    });
+    save(); render();
+  }
+  function cycleStatus(id) {
+    tasks = tasks.map(function (t) {
+      if (t.id !== id) return t;
+      var next = S_ORDER[(S_ORDER.indexOf(t.status || "not_started") + 1) % S_ORDER.length];
+      return Object.assign({}, t, {
+        status: next,
+        done: next === "done",
+        doneAt: next === "done" ? Date.now() : null
+      });
+    });
+    save(); render();
+  }
+  function deleteTask(id) {
+    var t = tasks.filter(function (x) { return x.id === id; })[0];
+    lastDeleted = t;
+    tasks = tasks.filter(function (x) { return x.id !== id; });
+    save(); render();
+    toast('Deleted: "' + (t.text.length > 30 ? t.text.slice(0, 30) + "..." : t.text) + '"', "Undo", function () {
+      if (lastDeleted) { tasks.unshift(lastDeleted); lastDeleted = null; save(); render(); }
+    });
+  }
+  function cyclePriority(id) {
+    var order = ["urgent", "high", "med", "low"];
+    tasks = tasks.map(function (t) {
+      if (t.id !== id) return t;
+      var next = order[(order.indexOf(t.priority) + 1) % 3];
+      return Object.assign({}, t, { priority: next });
+    });
+    save(); render();
+  }
+  function startEdit(id) { editingId = id; render(); }
+  function saveEdit(id) {
+    var text = document.getElementById("editText-" + id).value.trim();
+    var notes = document.getElementById("editNotes-" + id).value.trim() || null;
+    if (text) {
+      tasks = tasks.map(function (t) { return t.id === id ? Object.assign({}, t, { text: text, notes: notes }) : t; });
+    }
+    editingId = null; save(); render();
+  }
+  function clearDone() {
+    tasks = tasks.filter(function (t) { return !t.done; });
+    save(); render();
+  }
+
+  // ---------- Daily actions ----------
+  function addDaily(group) {
+    var input = document.getElementById(group === "work" ? "newWork" : "newPersonal");
+    var text = input.value.trim();
+    if (!text) return;
+    dailies.push({ id: uid(), text: text, group: group, createdAt: Date.now(), doneDates: {} });
+    input.value = "";
+    save(); renderDaily(); input.focus();
+  }
+  function toggleDaily(id) {
+    var today = todayStr();
+    dailies = dailies.map(function (d) {
+      if (d.id !== id) return d;
+      var dd = Object.assign({}, d.doneDates || {});
+      if (dd[today]) delete dd[today]; else dd[today] = true;
+      return Object.assign({}, d, { doneDates: dd });
+    });
+    save(); renderDaily();
+  }
+  function deleteDaily(id) {
+    var d = dailies.filter(function (x) { return x.id === id; })[0];
+    lastDeletedDaily = d;
+    dailies = dailies.filter(function (x) { return x.id !== id; });
+    save(); renderDaily();
+    toast('Removed daily: "' + (d.text.length > 30 ? d.text.slice(0, 30) + "..." : d.text) + '"', "Undo", function () {
+      if (lastDeletedDaily) { dailies.push(lastDeletedDaily); lastDeletedDaily = null; save(); renderDaily(); }
+    });
+  }
+  function startEditDaily(id) { editingDailyId = id; renderDaily(); }
+  function saveEditDaily(id) {
+    var text = document.getElementById("editDaily-" + id).value.trim();
+    if (text) {
+      dailies = dailies.map(function (d) { return d.id === id ? Object.assign({}, d, { text: text }) : d; });
+    }
+    editingDailyId = null; save(); renderDaily();
+  }
+
+  // ---------- Reminder logic ----------
+  function occAfter(r, fromDate) {
+    // Returns the first occurrence of reminder r on or after fromDate (a Date at midnight)
+    var base = new Date(r.date + "T00:00:00");
+    if (!r.repeat || r.repeat === "none") return base;
+    var d;
+    if (r.repeat === "weekly") {
+      d = new Date(base);
+      while (d < fromDate) d.setDate(d.getDate() + 7);
+      return d;
+    }
+    if (r.repeat === "monthly") {
+      var day = base.getDate();
+      var cur = new Date(fromDate.getFullYear(), fromDate.getMonth(), 1);
+      for (var i = 0; i < 24; i++) {
+        var dim = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
+        var cand = new Date(cur.getFullYear(), cur.getMonth(), Math.min(day, dim));
+        if (cand >= fromDate && cand >= base) return cand;
+        cur.setMonth(cur.getMonth() + 1);
+      }
+      return base;
+    }
+    if (r.repeat === "yearly") {
+      var y = fromDate.getFullYear();
+      var c = new Date(y, base.getMonth(), base.getDate());
+      if (c < fromDate || c < base) c = new Date(y + 1, base.getMonth(), base.getDate());
+      return c;
+    }
+    return base;
+  }
+  function currentOcc(r) {
+    // The occurrence the user should see next (skips occurrences already checked off)
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    if (!r.repeat || r.repeat === "none") return new Date(r.date + "T00:00:00");
+    var occ = occAfter(r, today);
+    if (r.doneDates && r.doneDates[dateStr(occ)]) {
+      var next = new Date(occ); next.setDate(next.getDate() + 1);
+      occ = occAfter(r, next);
+    }
+    return occ;
+  }
+  function fmtTime(t) {
+    if (!t) return "";
+    var parts = t.split(":");
+    var h = parseInt(parts[0], 10), m = parts[1];
+    var ap = h >= 12 ? "PM" : "AM";
+    h = h % 12; if (h === 0) h = 12;
+    return h + ":" + m + " " + ap;
+  }
+  function fmtOccDate(d) {
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var diff = Math.round((d - today) / 86400000);
+    var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    var days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    if (diff === 0) return "Today";
+    if (diff === 1) return "Tomorrow";
+    if (diff < 0) return Math.abs(diff) + "d late · " + months[d.getMonth()] + " " + d.getDate();
+    if (diff <= 7) return days[d.getDay()] + " · in " + diff + "d";
+    var s = months[d.getMonth()] + " " + d.getDate();
+    if (d.getFullYear() !== today.getFullYear()) s += ", " + d.getFullYear();
+    return s;
+  }
+  var REPEAT_LABEL = { none: "", weekly: "🔁 Every week", monthly: "🔁 Every month", yearly: "🔁 Every year" };
+
+  // ---------- Reminder actions ----------
+  function addReminder() {
+    var input = document.getElementById("remText");
+    var text = input.value.trim();
+    var date = document.getElementById("remDate").value;
+    if (!text) return;
+    if (!date) { toast("Pick a date for this reminder first.", "", null); return; }
+    reminders.push({
+      id: uid(), text: text, date: date,
+      time: document.getElementById("remTime").value || null,
+      repeat: document.getElementById("remRepeat").value || "none",
+      doneDates: {}, done: false, createdAt: Date.now()
+    });
+    input.value = ""; document.getElementById("remDate").value = "";
+    document.getElementById("remTime").value = "";
+    document.getElementById("btnAddRem").disabled = true;
+    save(); renderRem(); input.focus();
+  }
+  function checkReminder(id) {
+    var r = reminders.filter(function (x) { return x.id === id; })[0];
+    if (!r) return;
+    if (!r.repeat || r.repeat === "none") {
+      // One-time: checking it off removes it (with undo)
+      lastDeletedRem = r;
+      reminders = reminders.filter(function (x) { return x.id !== id; });
+      save(); renderRem();
+      toast("Done: \"" + (r.text.length > 26 ? r.text.slice(0, 26) + "..." : r.text) + "\"", "Undo", function () {
+        if (lastDeletedRem) { reminders.push(lastDeletedRem); lastDeletedRem = null; save(); renderRem(); }
+      });
+    } else {
+      var occ = currentOcc(r);
+      var occKey = dateStr(occ);
+      reminders = reminders.map(function (x) {
+        if (x.id !== id) return x;
+        var dd = Object.assign({}, x.doneDates || {});
+        dd[occKey] = true;
+        return Object.assign({}, x, { doneDates: dd });
+      });
+      save(); renderRem();
+      var updated = reminders.filter(function (x) { return x.id === id; })[0];
+      toast("Done for now — next: " + fmtOccDate(currentOcc(updated)), "", null);
+    }
+  }
+  function deleteReminder(id) {
+    var r = reminders.filter(function (x) { return x.id === id; })[0];
+    lastDeletedRem = r;
+    reminders = reminders.filter(function (x) { return x.id !== id; });
+    save(); renderRem();
+    toast('Removed reminder: "' + (r.text.length > 26 ? r.text.slice(0, 26) + "..." : r.text) + '"', "Undo", function () {
+      if (lastDeletedRem) { reminders.push(lastDeletedRem); lastDeletedRem = null; save(); renderRem(); }
+    });
+  }
+  function startEditRem(id) { editingRemId = id; renderRem(); }
+  function saveEditRem(id) {
+    var text = document.getElementById("editRemText-" + id).value.trim();
+    var date = document.getElementById("editRemDate-" + id).value;
+    var time = document.getElementById("editRemTime-" + id).value || null;
+    var repeat = document.getElementById("editRemRepeat-" + id).value;
+    if (text && date) {
+      reminders = reminders.map(function (r) {
+        return r.id === id ? Object.assign({}, r, { text: text, date: date, time: time, repeat: repeat }) : r;
+      });
+    }
+    editingRemId = null; save(); renderRem();
+  }
+
+  // ---------- Export / Import ----------
+  function exportBackup() {
+    var blob = new Blob([JSON.stringify({ version: 2, tasks: tasks, dailies: dailies, reminders: reminders }, null, 2)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    var d = new Date();
+    a.download = "todo-backup-" + d.getFullYear() + "-" + (d.getMonth()+1) + "-" + d.getDate() + ".json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast("Backup file downloaded.", "", null);
+  }
+  function importBackup(file) {
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        var data = JSON.parse(e.target.result);
+        var inTasks = [], inDailies = [], inRems = [];
+        if (Array.isArray(data)) inTasks = data;                       // old backup format
+        else if (data && typeof data === "object") {
+          inTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          inDailies = Array.isArray(data.dailies) ? data.dailies : [];
+          inRems = Array.isArray(data.reminders) ? data.reminders : [];
+        } else throw new Error("bad format");
+
+        var existT = {}, existD = {}, existR = {}, added = 0;
+        tasks.forEach(function (t) { existT[t.id] = true; });
+        dailies.forEach(function (d) { existD[d.id] = true; });
+        reminders.forEach(function (r) { existR[r.id] = true; });
+        inTasks.forEach(function (t) {
+          if (t && t.id && t.text && !existT[t.id]) { tasks.push(t); added++; }
+        });
+        inDailies.forEach(function (d) {
+          if (d && d.id && d.text && !existD[d.id]) { dailies.push(d); added++; }
+        });
+        inRems.forEach(function (r) {
+          if (r && r.id && r.text && r.date && !existR[r.id]) { reminders.push(r); added++; }
+        });
+        tasks.sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+        save(); render(); renderDaily(); renderRem();
+        toast("Imported " + added + " item(s) from backup.", "", null);
+      } catch (err) {
+        toast("That file is not a valid backup. Choose a .json file exported from this app.", "", null);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // ---------- Render: Tasks ----------
+  function render() {
+    var total = tasks.length;
+    var doneCount = tasks.filter(function (t) { return t.done; }).length;
+    var pw = document.getElementById("progressWrap");
+    if (total > 0) {
+      pw.style.display = "block";
+      document.getElementById("progressText").textContent = doneCount + " of " + total + " done";
+      var pct = Math.round((doneCount / total) * 100);
+      document.getElementById("progressPct").textContent = pct + "%";
+      document.getElementById("barFill").style.width = pct + "%";
+    } else pw.style.display = "none";
+
+    document.getElementById("vtTasksSub").textContent = (total - doneCount) > 0 ? "(" + (total - doneCount) + " left)" : "";
+
+    var cd = document.getElementById("btnClearDone");
+    if (doneCount > 0) { cd.style.display = "inline"; cd.textContent = "Clear all done (" + doneCount + ")"; }
+    else cd.style.display = "none";
+
+    var cats = [];
+    tasks.forEach(function (t) { if (t.category && cats.indexOf(t.category) === -1) cats.push(t.category); });
+    cats.sort();
+    var chipsEl = document.getElementById("chips");
+    if (cats.length) {
+      var h = '<button class="chip' + (!catFilter ? " active" : "") + '" data-cat="">All</button>';
+      cats.forEach(function (c) {
+        h += '<button class="chip' + (catFilter === c ? " active" : "") + '" data-cat="' + esc(c) + '">🏷 ' + esc(c) + "</button>";
+      });
+      chipsEl.innerHTML = h;
+    } else chipsEl.innerHTML = "";
+    document.getElementById("catList").innerHTML = cats.map(function (c) { return '<option value="' + esc(c) + '">'; }).join("");
+
+    var list = tasks.slice();
+    if (filter === "active") list = list.filter(function (t) { return !t.done; });
+    if (filter === "done") list = list.filter(function (t) { return t.done; });
+    if (statusFilter) list = list.filter(function (t) { return (t.status || "not_started") === statusFilter; });
+    if (catFilter) list = list.filter(function (t) { return t.category === catFilter; });
+    if (search.trim()) {
+      var q = search.trim().toLowerCase();
+      list = list.filter(function (t) {
+        return t.text.toLowerCase().indexOf(q) !== -1 ||
+               (t.category || "").toLowerCase().indexOf(q) !== -1 ||
+               (t.notes || "").toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    var pOrder = { urgent: 0, high: 1, med: 2, low: 3 };
+    list.sort(function (a, b) {
+      if (sortBy === "priority") return (pOrder[a.priority] - pOrder[b.priority]) || (b.createdAt - a.createdAt);
+      if (sortBy === "due") {
+        if (!a.due && !b.due) return b.createdAt - a.createdAt;
+        if (!a.due) return 1;
+        if (!b.due) return -1;
+        return a.due < b.due ? -1 : a.due > b.due ? 1 : 0;
+      }
+      return b.createdAt - a.createdAt;
+    });
+
+    var el = document.getElementById("list");
+    if (!list.length) {
+      el.innerHTML =
+        '<div class="empty"><div class="big">📝</div><div class="t1">' +
+        (total === 0 ? "Your list is empty" : "Nothing matches your filters") +
+        '</div><div class="t2">' +
+        (total === 0 ? "Type your first task above." : "Try clearing the search or filters.") +
+        "</div></div>";
+      return;
+    }
+
+    var html = "";
+    list.forEach(function (t) {
+      var p = PRI[t.priority] || PRI.med;
+      var due = formatDue(t.due);
+      var border = t.done ? "#D6D2C9" : PRI_COLOR[t.priority] || PRI_COLOR.med;
+      html += '<div class="card task' + (t.done ? " done" : "") + '" style="border-left-color:' + border + '">';
+      html += '<div class="check" data-act="toggle" data-id="' + t.id + '">' + (t.done ? "✔" : "") + "</div>";
+      html += '<div class="task-body">';
+
+      if (editingId === t.id) {
+        html += '<div class="edit-box">' +
+          '<input id="editText-' + t.id + '" value="' + esc(t.text) + '">' +
+          '<textarea id="editNotes-' + t.id + '" placeholder="Notes or details (optional)...">' + esc(t.notes || "") + "</textarea>" +
+          '<div class="edit-actions">' +
+          '<button class="btn-save" data-act="saveEdit" data-id="' + t.id + '">Save</button>' +
+          '<button class="btn-cancel" data-act="cancelEdit">Cancel</button>' +
+          "</div></div>";
+      } else {
+        html += '<div class="task-text" data-act="' + (t.done ? "" : "edit") + '" data-id="' + t.id + '">' + esc(t.text) + "</div>";
+        if (t.notes && showNotes && !t.notesHidden) {
+          var noteText = (expanded[t.id] || t.notes.length <= 120) ? t.notes : t.notes.slice(0, 120) + "...";
+          html += '<div class="task-notes" data-act="expand" data-id="' + t.id + '">🗒 ' + esc(noteText) + "</div>";
+        }
+        html += '<div class="meta">';
+        if (t.notes && !showNotes) html += '<span class="tagchip" title="This task has notes — turn Notes on to see them">🗒 has notes</span>';
+        var st = STATUS[t.status || "not_started"];
+        html += '<button class="status-chip" style="background:' + st.bg + ';color:' + st.color + '" data-act="status" data-id="' + t.id + '" title="Click to change status">' + st.label + "</button>";
+        if (!t.done) html += '<button class="pri ' + p.cls + '" data-act="pri" data-id="' + t.id + '" title="Click to change priority">' + p.label + "</button>";
+        if (t.category) html += '<span class="tagchip">🏷 ' + esc(t.category) + "</span>";
+        if (due && !t.done) html += '<span class="duechip ' + due.cls + '">📅 ' + due.text + "</span>";
+        if (t.notes && showNotes) {
+          html += '<button class="notes-link" data-act="togglenotes" data-id="' + t.id + '">' +
+            (t.notesHidden ? "🗒 Show notes" : "✕ Hide notes") + "</button>";
+        }
+        html += "</div>";
+      }
+
+      html += "</div>";
+      html += '<div class="task-actions">';
+      if (!t.done && editingId !== t.id) html += '<button class="icon-btn" data-act="edit" data-id="' + t.id + '" title="Edit task and notes">✏️</button>';
+      html += '<button class="icon-btn del" data-act="del" data-id="' + t.id + '" title="Delete">🗑</button>';
+      html += "</div></div>";
+    });
+    el.innerHTML = html;
+
+    if (editingId) {
+      var ei = document.getElementById("editText-" + editingId);
+      if (ei) {
+        ei.focus();
+        ei.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") saveEdit(editingId);
+          if (e.key === "Escape") { editingId = null; render(); }
+        });
+      }
+    }
+  }
+
+  // ---------- Render: Daily ----------
+  function renderDaily() {
+    currentDay = todayStr();
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    var now = new Date();
+    document.getElementById("dailyDate").textContent =
+      "🗓 " + days[now.getDay()] + ", " + months[now.getMonth()] + " " + now.getDate();
+
+    var total = dailies.length;
+    var doneCount = dailies.filter(doneToday).length;
+
+    document.getElementById("vtDailySub").textContent =
+      total > 0 ? "(" + doneCount + "/" + total + " today)" : "";
+
+    var pw = document.getElementById("dailyProgressWrap");
+    if (total > 0) {
+      pw.style.display = "block";
+      document.getElementById("dailyProgressText").textContent = doneCount + " of " + total + " done today";
+      var pct = Math.round((doneCount / total) * 100);
+      document.getElementById("dailyProgressPct").textContent = pct + "%";
+      document.getElementById("dailyBarFill").style.width = pct + "%";
+    } else pw.style.display = "none";
+
+    ["work", "personal"].forEach(function (group) {
+      var items = dailies.filter(function (d) { return d.group === group; });
+      items.sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); });
+      var gDone = items.filter(doneToday).length;
+      document.getElementById(group + "Count").textContent =
+        items.length ? gDone + " / " + items.length + " today" : "";
+
+      var el = document.getElementById(group + "List");
+      if (!items.length) {
+        el.innerHTML = '<div class="dempty">' +
+          (group === "work"
+            ? "No daily work routines yet — add the things you do every workday."
+            : "No daily personal routines yet — add your everyday habits.") +
+          "</div>";
+        return;
+      }
+      var html = "";
+      items.forEach(function (d) {
+        var isDone = doneToday(d);
+        var s = streak(d);
+        html += '<div class="drow' + (isDone ? " done" : "") + '">';
+        html += '<div class="check" data-dact="toggle" data-id="' + d.id + '">' + (isDone ? "✔" : "") + "</div>";
+        if (editingDailyId === d.id) {
+          html += '<div class="edit-box" style="flex:1">' +
+            '<input id="editDaily-' + d.id + '" value="' + esc(d.text) + '">' +
+            '<div class="edit-actions">' +
+            '<button class="btn-save" data-dact="saveEdit" data-id="' + d.id + '">Save</button>' +
+            '<button class="btn-cancel" data-dact="cancelEdit">Cancel</button>' +
+            "</div></div>";
+        } else {
+          html += '<div class="dtext" data-dact="edit" data-id="' + d.id + '">' + esc(d.text) + "</div>";
+          if (s >= 2) html += '<span class="streak" title="' + s + ' days in a row">🔥 ' + s + "d</span>";
+        }
+        html += '<div class="task-actions">';
+        if (editingDailyId !== d.id) html += '<button class="icon-btn" data-dact="edit" data-id="' + d.id + '" title="Edit">✏️</button>';
+        html += '<button class="icon-btn del" data-dact="del" data-id="' + d.id + '" title="Remove from daily list">🗑</button>';
+        html += "</div></div>";
+      });
+      el.innerHTML = html;
+    });
+
+    var allDone = document.getElementById("dailyAllDone");
+    if (total > 0 && doneCount === total) {
+      allDone.style.display = "block";
+      allDone.textContent = "🎉 All dailies done for today — great job! See you again tomorrow.";
+    } else allDone.style.display = "none";
+
+    if (editingDailyId) {
+      var ei = document.getElementById("editDaily-" + editingDailyId);
+      if (ei) {
+        ei.focus();
+        ei.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") saveEditDaily(editingDailyId);
+          if (e.key === "Escape") { editingDailyId = null; renderDaily(); }
+        });
+      }
+    }
+  }
+
+  // ---------- Render: Reminders ----------
+  function renderRem() {
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var groups = { overdue: [], today: [], upcoming: [] };
+    reminders.forEach(function (r) {
+      var occ = currentOcc(r);
+      var diff = Math.round((occ - today) / 86400000);
+      var entry = { r: r, occ: occ };
+      if (diff < 0) groups.overdue.push(entry);
+      else if (diff === 0) groups.today.push(entry);
+      else groups.upcoming.push(entry);
+    });
+    Object.keys(groups).forEach(function (k) {
+      groups[k].sort(function (a, b) { return a.occ - b.occ || (a.r.time || "99").localeCompare(b.r.time || "99"); });
+    });
+
+    var alertCount = groups.overdue.length + groups.today.length;
+    document.getElementById("vtRemSub").textContent = alertCount > 0 ? "(" + alertCount + " today)" : "";
+
+    var el = document.getElementById("remList");
+    if (!reminders.length) {
+      el.innerHTML =
+        '<div class="empty"><div class="big">🔔</div><div class="t1">No reminders yet</div>' +
+        '<div class="t2">Add dates you don\'t want to miss — bills, birthdays, appointments.</div></div>';
+      return;
+    }
+
+    function rowHtml(entry, section) {
+      var r = entry.r, occ = entry.occ;
+      var html = '<div class="card rem-row">';
+      html += '<div class="check" data-ract="check" data-id="' + r.id + '" title="' +
+        ((!r.repeat || r.repeat === "none") ? "Mark done (removes it)" : "Done for this occurrence — comes back next time") + '"></div>';
+      html += '<div class="task-body">';
+      if (editingRemId === r.id) {
+        html += '<div class="edit-box">' +
+          '<input id="editRemText-' + r.id + '" value="' + esc(r.text) + '">' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+          '<input type="date" id="editRemDate-' + r.id + '" value="' + esc(r.date) + '" style="font-size:12px;padding:5px 8px;border:1px solid #C9BEF5;border-radius:8px;outline:none">' +
+          '<input type="time" id="editRemTime-' + r.id + '" value="' + esc(r.time || "") + '" style="font-size:12px;padding:5px 8px;border:1px solid #C9BEF5;border-radius:8px;outline:none">' +
+          '<select id="editRemRepeat-' + r.id + '" style="font-size:12px;padding:5px 8px;border:1px solid #C9BEF5;border-radius:8px;outline:none">' +
+          '<option value="none"' + ((!r.repeat || r.repeat === "none") ? " selected" : "") + '>One-time</option>' +
+          '<option value="weekly"' + (r.repeat === "weekly" ? " selected" : "") + '>Every week</option>' +
+          '<option value="monthly"' + (r.repeat === "monthly" ? " selected" : "") + '>Every month</option>' +
+          '<option value="yearly"' + (r.repeat === "yearly" ? " selected" : "") + '>Every year</option>' +
+          "</select></div>" +
+          '<div class="edit-actions">' +
+          '<button class="btn-save" data-ract="saveEdit" data-id="' + r.id + '">Save</button>' +
+          '<button class="btn-cancel" data-ract="cancelEdit">Cancel</button>' +
+          "</div></div>";
+      } else {
+        html += '<div class="task-text" data-ract="edit" data-id="' + r.id + '">' + esc(r.text) + "</div>";
+        html += '<div class="meta">';
+        var whenCls = section === "overdue" ? "late" : section === "today" ? "hot" : "";
+        var when = fmtOccDate(occ) + (r.time ? " · " + fmtTime(r.time) : "");
+        html += '<span class="rem-when ' + whenCls + '">📅 ' + when + "</span>";
+        if (r.repeat && r.repeat !== "none") html += '<span class="rem-repeat">' + REPEAT_LABEL[r.repeat] + "</span>";
+        html += "</div>";
+      }
+      html += "</div>";
+      html += '<div class="task-actions">';
+      if (editingRemId !== r.id) html += '<button class="icon-btn" data-ract="edit" data-id="' + r.id + '" title="Edit reminder">✏️</button>';
+      html += '<button class="icon-btn del" data-ract="del" data-id="' + r.id + '" title="Delete reminder">🗑</button>';
+      html += "</div></div>";
+      return html;
+    }
+
+    var out = "";
+    if (groups.overdue.length) {
+      out += '<div class="rem-section overdue"><div class="rem-section-title">⚠ OVERDUE</div>';
+      groups.overdue.forEach(function (e) { out += rowHtml(e, "overdue"); });
+      out += "</div>";
+    }
+    if (groups.today.length) {
+      out += '<div class="rem-section today"><div class="rem-section-title">🔔 TODAY</div>';
+      groups.today.forEach(function (e) { out += rowHtml(e, "today"); });
+      out += "</div>";
+    }
+    if (groups.upcoming.length) {
+      out += '<div class="rem-section upcoming"><div class="rem-section-title">UPCOMING</div>';
+      groups.upcoming.forEach(function (e) { out += rowHtml(e, "upcoming"); });
+      out += "</div>";
+    }
+    if (!out) {
+      out = '<div class="empty"><div class="big">✅</div><div class="t1">All caught up</div><div class="t2">No pending reminders right now.</div></div>';
+    }
+    el.innerHTML = out;
+
+    if (editingRemId) {
+      var ei = document.getElementById("editRemText-" + editingRemId);
+      if (ei) {
+        ei.focus();
+        ei.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") saveEditRem(editingRemId);
+          if (e.key === "Escape") { editingRemId = null; renderRem(); }
+        });
+      }
+    }
+  }
+
+  // ---------- View switching ----------
+  function setView(v) {
+    view = v;
+    document.getElementById("viewTasks").style.display = v === "tasks" ? "block" : "none";
+    document.getElementById("viewDaily").style.display = v === "daily" ? "block" : "none";
+    document.getElementById("viewRem").style.display = v === "rem" ? "block" : "none";
+    document.getElementById("vtTasks").classList.toggle("active", v === "tasks");
+    document.getElementById("vtDaily").classList.toggle("active", v === "daily");
+    document.getElementById("vtRem").classList.toggle("active", v === "rem");
+    if (v === "daily") renderDaily();
+    if (v === "rem") renderRem();
+  }
+
+  // ---------- Events ----------
+  document.getElementById("vtTasks").addEventListener("click", function () { setView("tasks"); });
+  document.getElementById("vtDaily").addEventListener("click", function () { setView("daily"); });
+  document.getElementById("vtRem").addEventListener("click", function () { setView("rem"); });
+
+  // Reminder events
+  document.getElementById("remText").addEventListener("input", function () {
+    document.getElementById("btnAddRem").disabled = !this.value.trim();
+  });
+  document.getElementById("remText").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") addReminder();
+  });
+  document.getElementById("btnAddRem").addEventListener("click", addReminder);
+  document.getElementById("remList").addEventListener("click", function (e) {
+    var el = e.target.closest("[data-ract]");
+    if (!el) return;
+    var act = el.getAttribute("data-ract"), id = el.getAttribute("data-id");
+    if (act === "check") checkReminder(id);
+    else if (act === "del") deleteReminder(id);
+    else if (act === "edit") startEditRem(id);
+    else if (act === "saveEdit") saveEditRem(id);
+    else if (act === "cancelEdit") { editingRemId = null; renderRem(); }
+  });
+
+  document.getElementById("newText").addEventListener("input", function () {
+    document.getElementById("btnAdd").disabled = !this.value.trim();
+  });
+  document.getElementById("newText").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") addTask();
+  });
+  document.getElementById("btnAdd").addEventListener("click", addTask);
+
+  document.getElementById("optToggle").addEventListener("click", function () {
+    var o = document.getElementById("options");
+    o.classList.toggle("open");
+    this.textContent = o.classList.contains("open") ? "▴ Hide options" : "▾ Priority · Category · Due date · Notes";
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll(".pri-btn"), function (b) {
+    b.addEventListener("click", function () {
+      newPriority = this.getAttribute("data-pri");
+      Array.prototype.forEach.call(document.querySelectorAll(".pri-btn"), function (x) {
+        x.className = "pri-btn";
+      });
+      this.className = "pri-btn sel-" + newPriority;
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (b) {
+    b.addEventListener("click", function () {
+      filter = this.getAttribute("data-filter");
+      Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (x) { x.classList.remove("active"); });
+      this.classList.add("active");
+      render();
+    });
+  });
+
+  document.getElementById("search").addEventListener("input", function () {
+    search = this.value; render();
+  });
+
+  document.getElementById("btnSort").addEventListener("click", function () {
+    sortBy = sortBy === "created" ? "priority" : sortBy === "priority" ? "due" : "created";
+    this.textContent = "⇅ " + (sortBy === "created" ? "Newest" : sortBy === "priority" ? "Priority" : "Due date");
+    render();
+  });
+
+  document.getElementById("btnNotes").addEventListener("click", function () {
+    showNotes = !showNotes;
+    this.textContent = "🗒 Notes: " + (showNotes ? "On" : "Off");
+    save(); render();
+  });
+
+  document.getElementById("statusFilter").addEventListener("change", function () {
+    statusFilter = this.value;
+    // Switch to the tab where the chosen status is visible
+    if (statusFilter) {
+      filter = statusFilter === "done" ? "done" : "active";
+      Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (x) {
+        x.classList.toggle("active", x.getAttribute("data-filter") === filter);
+      });
+    }
+    render();
+  });
+
+  document.getElementById("chips").addEventListener("click", function (e) {
+    var b = e.target.closest(".chip");
+    if (!b) return;
+    var c = b.getAttribute("data-cat");
+    catFilter = c === "" ? null : (catFilter === c ? null : c);
+    render();
+  });
+
+  document.getElementById("list").addEventListener("click", function (e) {
+    var el = e.target.closest("[data-act]");
+    if (!el) return;
+    var act = el.getAttribute("data-act"), id = el.getAttribute("data-id");
+    if (act === "toggle") toggleDone(id);
+    else if (act === "status") cycleStatus(id);
+    else if (act === "togglenotes") toggleTaskNotes(id);
+    else if (act === "del") deleteTask(id);
+    else if (act === "edit") startEdit(id);
+    else if (act === "pri") cyclePriority(id);
+    else if (act === "expand") { expanded[id] = !expanded[id]; render(); }
+    else if (act === "saveEdit") saveEdit(id);
+    else if (act === "cancelEdit") { editingId = null; render(); }
+  });
+
+  // Daily events
+  document.getElementById("viewDaily").addEventListener("click", function (e) {
+    var addBtn = e.target.closest("[data-addgroup]");
+    if (addBtn) { addDaily(addBtn.getAttribute("data-addgroup")); return; }
+    var el = e.target.closest("[data-dact]");
+    if (!el) return;
+    var act = el.getAttribute("data-dact"), id = el.getAttribute("data-id");
+    if (act === "toggle") toggleDaily(id);
+    else if (act === "del") deleteDaily(id);
+    else if (act === "edit") startEditDaily(id);
+    else if (act === "saveEdit") saveEditDaily(id);
+    else if (act === "cancelEdit") { editingDailyId = null; renderDaily(); }
+  });
+  document.getElementById("newWork").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") addDaily("work");
+  });
+  document.getElementById("newPersonal").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") addDaily("personal");
+  });
+
+  document.getElementById("btnClearDone").addEventListener("click", clearDone);
+  document.getElementById("btnExport").addEventListener("click", exportBackup);
+  document.getElementById("btnImport").addEventListener("click", function () {
+    document.getElementById("fileInput").click();
+  });
+  document.getElementById("fileInput").addEventListener("change", function () {
+    if (this.files && this.files[0]) importBackup(this.files[0]);
+    this.value = "";
+  });
+
+  // Auto-refresh when the date rolls over (e.g. app left open past midnight)
+  setInterval(function () {
+    if (currentDay && currentDay !== todayStr()) {
+      renderDaily(); render(); renderRem();
+    }
+  }, 60000);
+
+  // ---------- Init ----------
+  // Register service worker for offline use (only when hosted; skipped when opened as a local file)
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+    navigator.serviceWorker.register("sw.js").catch(function () { /* offline caching unavailable */ });
+  }
+  load();
+  document.getElementById("btnNotes").textContent = "🗒 Notes: " + (showNotes ? "On" : "Off");
+  render();
+  renderDaily();
+  renderRem();
+})();
+</script>
+</body>
+</html>
