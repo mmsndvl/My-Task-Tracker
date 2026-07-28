@@ -20,7 +20,7 @@
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--ink); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-height: 100vh; }
-  .wrap { max-width: 860px; margin: 0 auto; padding: 24px 14px 90px; }
+  .wrap { max-width: 1500px; margin: 0 auto; padding: 24px 18px 90px; }
 
   .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
   h1 { color: var(--heading); font-size: 26px; letter-spacing: -0.5px; }
@@ -65,11 +65,12 @@
   .scrollx { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
   /* Grid tables (income & expenses) */
-  table.grid { border-collapse: collapse; font-size: 12px; min-width: 100%; }
-  table.grid th { font-size: 9.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .3px; padding: 7px 6px; border-bottom: 2px solid var(--line); text-align: right; white-space: nowrap; position: sticky; top: 0; background: #fff; }
-  table.grid th.nm { text-align: left; min-width: 130px; }
-  table.grid td { padding: 6px; border-bottom: 1px solid #F0F3F0; text-align: right; white-space: nowrap; }
-  table.grid td.nm { text-align: left; max-width: 170px; white-space: normal; word-break: break-word; font-weight: 600; cursor: pointer; }
+  table.grid { border-collapse: collapse; font-size: 11.5px; min-width: 100%; }
+  table.grid th { font-size: 9px; color: var(--faint); text-transform: uppercase; letter-spacing: .2px; padding: 6px 5px; border-bottom: 2px solid var(--line); text-align: right; white-space: nowrap; position: sticky; top: 0; background: #fff; }
+  table.grid th.nm { text-align: left; min-width: 110px; position: sticky; left: 0; z-index: 3; }
+  table.grid td { padding: 5px; border-bottom: 1px solid #F0F3F0; text-align: right; white-space: nowrap; }
+  table.grid td.nm { text-align: left; max-width: 160px; white-space: normal; word-break: break-word; font-weight: 600; cursor: pointer; position: sticky; left: 0; background: #fff; z-index: 2; box-shadow: 2px 0 3px rgba(0,0,0,.04); }
+  table.grid tr.totals td.nm { background: #FAFBFA; }
   table.grid td.nm .due { display: block; font-size: 10px; color: var(--faint); font-weight: 400; }
   table.grid td.cell { cursor: pointer; min-width: 62px; color: var(--ink); }
   table.grid td.cell:hover { background: #F3FAF7; }
