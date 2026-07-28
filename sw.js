@@ -1,6 +1,9 @@
-// Service worker: caches the app so it works offline after the first visit
-var CACHE = "my-todo-tracker-v2";
-var FILES = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
+// Service worker v3: caches both apps (to-do + finances) for offline use
+var CACHE = "my-todo-tracker-v3";
+var FILES = [
+  "./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png",
+  "./finance.html", "./manifest-finance.json", "./icon-finance-192.png", "./icon-finance-512.png", "./icon-finance-180.png"
+];
 
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }));
