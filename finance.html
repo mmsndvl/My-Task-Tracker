@@ -96,6 +96,18 @@
   table.grid td.cell.heldwk { background: #F5EFFB; color: var(--purple); font-weight: 700; }
   table.grid td.cell.heldwk:hover { background: #EDE3F7; }
 
+  /* ★ Funds Planner — compact para kasya lahat ng columns nang walang scroll, may kulay ang info columns */
+  table.fpgrid { width: 100%; font-size: 10.5px; }
+  table.fpgrid th, table.fpgrid td { padding: 4px 4px; }
+  table.fpgrid td.cell { min-width: 0; }
+  table.fpgrid th.c-due, table.fpgrid td.c-due { background: #E7EFF9; }
+  table.fpgrid th.c-due { color: var(--blue); }
+  table.fpgrid th.c-mdue, table.fpgrid td.c-mdue { background: #E4F0EC; }
+  table.fpgrid th.c-mdue { color: var(--green); }
+  table.fpgrid th.c-carry, table.fpgrid td.c-carry { background: #FDF0E3; border-right: 2px solid #EBD3AE; }
+  table.fpgrid th.c-carry { color: #C06014; }
+  table.fpgrid td.cell.c-carry:hover { background: #F8E4C9; }
+
   /* ★ Cell comments — red corner triangle, like Excel */
   table.grid td.cell, table.grid td.relcell { position: relative; }
   td.has-cmt::after { content: ""; position: absolute; top: 0; right: 0; width: 0; height: 0; border-top: 7px solid var(--red); border-left: 7px solid transparent; pointer-events: none; }
@@ -124,7 +136,7 @@
 
   .gridcard { padding: 12px; margin-bottom: 16px; }
   .gridhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; flex-wrap: wrap; }
-  .gridhead .t { font-size: 13.5px; font-weight: 800; color: var(--heading); }
+  .gridhead .t { font-size: 12.5px; font-weight: 800; background: var(--heading); color: #fff; padding: 7px 14px; border-radius: 9px; letter-spacing: .3px; }
   .gridhead .gbtns { display: flex; gap: 6px; align-items: center; }
   .btn-mini { font-size: 11.5px; padding: 6px 11px; border-radius: 9px; border: none; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
   .hint { font-size: 10.5px; color: var(--faint); margin-top: 8px; }
@@ -166,6 +178,7 @@
   body.dark .monthbar button.nav, body.dark #monthSelect { background: var(--card); color: var(--heading); border-color: var(--line); }
   body.dark .view-tab { background: var(--card); }
   body.dark .view-tab.active { background: #8FD6C6; border-color: #8FD6C6; color: #0F1D19; }
+  body.dark .gridhead .t { background: #8FD6C6; color: #0F1D19; }
   body.dark .btn-cols { background: var(--card); }
   body.dark .btn-cols:hover { background: #242D29; }
   body.dark table.grid th, body.dark table.grid td.nm { background: var(--card); }
@@ -181,6 +194,10 @@
   body.dark table.grid tr.totals td.col-proj { background: #352E1D; }
   body.dark table.grid td.cell.heldwk { background: #2E2740; }
   body.dark table.grid td.cell.heldwk:hover { background: #382F4E; }
+  body.dark table.fpgrid th.c-due, body.dark table.fpgrid td.c-due { background: #1F2A38; }
+  body.dark table.fpgrid th.c-mdue, body.dark table.fpgrid td.c-mdue { background: #1E332B; }
+  body.dark table.fpgrid th.c-carry, body.dark table.fpgrid td.c-carry { background: #3A2E1E; border-right-color: #57452A; }
+  body.dark table.fpgrid td.cell.c-carry:hover { background: #47391F; }
   body.dark table.grid td.cell[style*="background:#"], body.dark td.relcell[style*="background:#"] { color: #22302B; }
   body.dark td.relcell.reldone { background: #1E3A55 !important; }
   body.dark td.relcell.reldone .relamt { color: #9DC8EE; }
@@ -410,14 +427,14 @@
     });
     (src.weekly || []).forEach(function (it) {
       m.weekly.push({ id: uid(), name: it.name, due: it.due || "", alloc: it.alloc || 0,
-                      hold: Math.max(0, Math.round((itemHoldOf(it) - relTotalOf(it)) * 100) / 100), w: {} });
+                      hold: Math.max(0, itemHeldRemain(it, false)), w: {} });
     });
     (src.monthly || []).forEach(function (it) {
-      // ★ Carry = ang NATITIRANG naka-hold sa bank pagkatapos ng buwan: dating Carry + mga
-      //   in-hold (Funds Planner) − mga inilabas (Release Schedule). Iyon ang naiwan sa bank.
+      // ★ Carry = ang NATITIRANG naka-hold sa bank pagkatapos ng buwan: dating Carry + week
+      //   amounts + On hold extras − mga inilabas (Release Schedule). Iyon ang naiwan sa bank.
       m.monthly.push({ id: uid(), name: it.name, due: it.due || "", alloc: it.alloc || 0,
                        projected: it.projected || 0,
-                       carry: Math.max(0, Math.round(((+it.carry || 0) + itemHoldOf(it) - relTotalOf(it)) * 100) / 100),
+                       carry: Math.max(0, itemHeldRemain(it, true)),
                        hold: 0, w: {}, rel: {}, relDone: {} });
     });
     (src.savings || []).forEach(function (it) {
@@ -530,9 +547,10 @@
   function itemHoldOf(it) { return Math.round(((+it.hold || 0) + fhTotal(it)) * 100) / 100; }
   // ★ Kabuuan ng nakalagay sa Release Schedule para sa item — ibinabawas sa naka-hold na funds
   function relTotalOf(it) { return Math.round(sumW(it.rel || {}) * 100) / 100; }
-  // ★ Natitirang naka-hold ng isang item = Carry (kung monthly) + mga in-hold − mga inilabas
+  // ★ Natitirang naka-hold ng isang item = Carry (kung monthly) + week amounts (mula sa
+  //   expenses tables — ito ang perang itinatabi sa bank kada linggo) + On hold extras − mga inilabas
   function itemHeldRemain(it, isMonthly) {
-    return Math.round(((isMonthly ? (+it.carry || 0) : 0) + itemHoldOf(it) - relTotalOf(it)) * 100) / 100;
+    return Math.round(((isMonthly ? (+it.carry || 0) : 0) + sumW(it.w) + itemHoldOf(it) - relTotalOf(it)) * 100) / 100;
   }
   function holdTotal(m) {
     var s = 0;
@@ -1083,7 +1101,7 @@
     h += '<div class="sidebyside">';
     var fVisW = []; ws.forEach(function (w, i) { if (!hidCol("fp", "w" + i)) fVisW.push(i); });
     var fHidden = ws.length - fVisW.length;
-    h += '<div class="card gridcard"><div class="gridhead"><div class="t">🏦 Funds Planner — Funds on Hold per Week</div>' +
+    h += '<div class="card gridcard" style="flex:1 1 100%"><div class="gridhead"><div class="t">🏦 Funds Planner — Funds on Hold per Week</div>' +
          '<div class="gbtns"><button class="btn-cols" data-cols="fp">👁 Columns' + (fHidden ? " (" + fHidden + " hidden)" : "") + '</button></div></div>';
     h += '<div class="statgrid" style="margin:0 0 12px">';
     h += '<div class="card stat" style="border-color:#D9C7F0"><div class="lbl">🔒 Iiwan sa bank (naka-hold para sa bills)</div>' +
@@ -1094,7 +1112,7 @@
          '<div class="sub2">Malayang pera — hiwalay sa naka-hold na funds</div></div>';
     h += '</div>';
     var fpCols = 4 + 3 + fVisW.length;
-    h += '<div class="scrollx"><table class="grid"><tr><th class="nm">Payee</th><th>Due</th><th>Monthly<br>Amount Due</th><th>Carry<br><span style="font-weight:400;text-transform:none">(carried over)</span></th>' +
+    h += '<div class="scrollx"><table class="grid fpgrid"><tr><th class="nm">Payee</th><th class="c-due">Due</th><th class="c-mdue">Monthly<br>Amount Due</th><th class="c-carry">Carry<br><span style="font-weight:400;text-transform:none">(carried over)</span></th>' +
          '<th>Total Funds<br>on Hold</th><th style="color:#2A5E8C">Ilalabas<br><span style="font-weight:400;text-transform:none">(Release Sched)</span></th><th style="color:var(--purple)">Natitirang<br>Naka-hold</th>';
     fVisW.forEach(function (i) { h += '<th>W' + (i + 1) + '<br>' + wkLabel(ws[i]) + '</th>'; });
     h += '</tr>';
@@ -1107,39 +1125,37 @@
         var isM = secName === "monthly";
         var mdue = isM ? (+it.projected || 0) : Math.round((+it.alloc || 0) * ws.length * 100) / 100;
         var carry = isM ? (+it.carry || 0) : 0;
-        var extraHold = +it.hold || 0;
-        var tot = Math.round((carry + fhTotal(it) + extraHold) * 100) / 100;
+        var extraHold = itemHoldOf(it);
+        var tot = Math.round((carry + sumW(it.w) + extraHold) * 100) / 100;
         var relT = relTotalOf(it);
         var remain = Math.round((tot - relT) * 100) / 100;
         fpCarryTot += carry; fpGrand += tot; fpRelTot += relT; fpRemTot += remain;
         h += '<tr><td class="nm" data-edit="' + secName + '" data-id="' + it.id + '">' + esc(it.name) + '</td>';
-        h += '<td style="text-align:right">' + (it.due ? esc(it.due) : "—") + '</td>';
-        h += '<td>' + (mdue ? fmt(mdue) : "—") + '</td>';
+        h += '<td class="c-due" style="text-align:right">' + (it.due ? esc(it.due) : "—") + '</td>';
+        h += '<td class="c-mdue">' + (mdue ? fmt(mdue) : "—") + '</td>';
         if (isM) {
-          h += '<td class="cell ' + (carry ? "" : "zero") + '" data-fld="carry" data-sec="monthly" data-id="' + it.id + '">' + (carry ? fmt(carry) : "—") + '</td>';
-        } else h += '<td style="color:#C4CFC9">—</td>';
+          h += '<td class="cell c-carry ' + (carry ? "" : "zero") + '" data-fld="carry" data-sec="monthly" data-id="' + it.id + '">' + (carry ? fmt(carry) : "—") + '</td>';
+        } else h += '<td class="c-carry" style="color:#C4CFC9">—</td>';
         h += '<td style="font-weight:700;color:var(--purple)">' + (tot ? fmt(tot) + (extraHold ? '<br><span style="font-size:9px;color:var(--faint);font-weight:400">kasama ang On hold ' + fmt(extraHold) + '</span>' : '') : "—") + '</td>';
         h += '<td style="color:#2A5E8C;font-weight:700">' + (relT ? "− " + fmt(relT) : "—") + '</td>';
         h += '<td class="' + (remain < 0 ? "neg" : "") + '" style="font-weight:800;' + (remain >= 0 ? 'color:var(--purple)' : '') + '">' + ((tot || relT) ? fmt(remain) : "—") + '</td>';
-        var fh = it.fh || {};
         fVisW.forEach(function (i) {
-          var v = +fh[i] || 0; fpWk[i] += v;
-          var df = deco(it, "f" + i);
-          h += '<td class="relcell' + (i === cw ? " curwk" : "") + df.cls + '"' + (df.sty ? ' style="' + df.sty + '"' : '') + df.ttl + '>' +
-               '<span class="fhamt relamt" data-fhwk="' + i + '" data-id="' + it.id + '" title="Tap para ilagay kung magkano ang itatabi sa bank sa linggong ito para sa payee na ito">' + (v ? fmt(v) : "—") + '</span></td>';
+          var v = +it.w[i] || 0; fpWk[i] += v;
+          var dw = deco(it, "w" + i);
+          h += '<td class="cell ' + (v ? "" : "zero") + (i === cw ? " curwk" : "") + dw.cls + '" data-wk="' + i + '" data-sec="' + secName + '" data-id="' + it.id + '"' + (dw.sty ? ' style="' + dw.sty + '"' : '') + dw.ttl + ' title="Kapareho ito ng week cell sa Expenses table — anuman ang ilagay mo dito, lalabas din doon (at kabaligtaran)">' + (v ? fmt(v) : "—") + '</td>';
         });
         h += '</tr>';
       });
     }
     fpRows("weekly", m.weekly, "WEEKLY EXPENSES");
     fpRows("monthly", m.monthly, "MONTHLY EXPENSES");
-    h += '<tr class="totals"><td class="nm">TOTALS</td><td></td><td></td><td>' + fmt(Math.round(fpCarryTot * 100) / 100) + '</td>';
+    h += '<tr class="totals"><td class="nm">TOTALS</td><td class="c-due"></td><td class="c-mdue"></td><td class="c-carry">' + fmt(Math.round(fpCarryTot * 100) / 100) + '</td>';
     h += '<td style="color:var(--purple)">' + fmt(Math.round(fpGrand * 100) / 100) + '</td>';
     h += '<td style="color:#2A5E8C">' + (fpRelTot ? "− " + fmt(Math.round(fpRelTot * 100) / 100) : "—") + '</td>';
     h += '<td class="' + (fpRemTot < 0 ? "neg" : "") + '" style="color:' + (fpRemTot < 0 ? 'var(--red)' : 'var(--purple)') + '">' + fmt(Math.round(fpRemTot * 100) / 100) + '</td>';
     fVisW.forEach(function (i) { h += '<td>' + fmt(Math.round(fpWk[i] * 100) / 100) + '</td>'; });
     h += '</tr>';
-    h += '</table></div><div class="hint">Katulad ng luma mong Excel: dito mo pinaplano kung <b>magkano ang itatabi (i-hold) sa bank kada linggo</b> para sa bawat payee. Tap ang week cell para maglagay o magbago ng halaga (may 💬 comment at 🎨 kulay din). Ang <b>Total Funds on Hold = Carry + kabuuan ng weekly amounts</b>. Ang mga amounts na inilagay mo sa <b>Release Schedule</b> ay <b>awtomatikong ibinabawas dito</b>: <b>Natitirang Naka-hold = Total Funds on Hold − Ilalabas</b>. Kapag pula (negative) ang Natitira, mas malaki ang naka-schedule na ilabas kaysa naka-hold. Sa susunod na buwan, ang Natitirang Naka-hold ng bawat item ay awtomatikong magiging <b>Carry</b> niya.</div></div>';
+    h += '</table></div><div class="hint">Ang W1–W4 dito ay <b>kapareho mismo ng week cells sa Weekly at Monthly Expenses tables</b> — anumang amount na ilagay mo sa expenses tables kada linggo ay awtomatikong kasama dito bilang perang naka-hold sa bank (pwede mo rin silang i-edit dito mismo, magsi-sync sa taas). Ang <b>Total Funds on Hold = Carry + week amounts + On hold extras</b>. Ang mga amounts na inilagay mo sa <b>Release Schedule</b> ay <b>awtomatikong ibinabawas</b>: <b>Natitirang Naka-hold = Total Funds on Hold − Ilalabas</b>. Kapag pula (negative) ang Natitira, mas malaki ang naka-schedule na ilabas kaysa naka-hold. Sa susunod na buwan, ang Natitirang Naka-hold ng bawat item ay awtomatikong magiging <b>Carry</b> niya.</div></div>';
 
     // 📤 RELEASE SCHEDULE — her Excel's right-side columns: money to take OUT of the bank each week; light blue = released na
     function relOf(it) { return it.rel || {}; }
