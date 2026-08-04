@@ -1112,9 +1112,9 @@
          '<div class="sub2">Malayang pera — hiwalay sa naka-hold na funds</div></div>';
     h += '</div>';
     var fpCols = 4 + 3 + fVisW.length;
-    h += '<div class="scrollx"><table class="grid fpgrid"><tr><th class="nm">Payee</th><th class="c-due">Due</th><th class="c-mdue">Monthly<br>Amount Due</th><th class="c-carry">Carry<br><span style="font-weight:400;text-transform:none">(carried over)</span></th>' +
-         '<th>Total Funds<br>on Hold</th><th style="color:#2A5E8C">Ilalabas<br><span style="font-weight:400;text-transform:none">(Release Sched)</span></th><th style="color:var(--purple)">Natitirang<br>Naka-hold</th>';
+    h += '<div class="scrollx"><table class="grid fpgrid"><tr><th class="nm">Payee</th><th class="c-due">Due</th><th class="c-mdue">Monthly<br>Amount Due</th><th class="c-carry">Carry<br><span style="font-weight:400;text-transform:none">(carried over)</span></th>';
     fVisW.forEach(function (i) { h += '<th>W' + (i + 1) + '<br>' + wkLabel(ws[i]) + '</th>'; });
+    h += '<th>Total Funds<br>on Hold</th><th style="color:#2A5E8C">Ilalabas<br><span style="font-weight:400;text-transform:none">(Release Sched)</span></th><th style="color:var(--purple)">Natitirang<br>Naka-hold</th>';
     h += '</tr>';
     var fpWk = []; ws.forEach(function () { fpWk.push(0); });
     var fpCarryTot = 0, fpGrand = 0, fpRelTot = 0, fpRemTot = 0;
@@ -1136,24 +1136,24 @@
         if (isM) {
           h += '<td class="cell c-carry ' + (carry ? "" : "zero") + '" data-fld="carry" data-sec="monthly" data-id="' + it.id + '">' + (carry ? fmt(carry) : "—") + '</td>';
         } else h += '<td class="c-carry" style="color:#C4CFC9">—</td>';
-        h += '<td style="font-weight:700;color:var(--purple)">' + (tot ? fmt(tot) + (extraHold ? '<br><span style="font-size:9px;color:var(--faint);font-weight:400">kasama ang On hold ' + fmt(extraHold) + '</span>' : '') : "—") + '</td>';
-        h += '<td style="color:#2A5E8C;font-weight:700">' + (relT ? "− " + fmt(relT) : "—") + '</td>';
-        h += '<td class="' + (remain < 0 ? "neg" : "") + '" style="font-weight:800;' + (remain >= 0 ? 'color:var(--purple)' : '') + '">' + ((tot || relT) ? fmt(remain) : "—") + '</td>';
         fVisW.forEach(function (i) {
           var v = +it.w[i] || 0; fpWk[i] += v;
           var dw = deco(it, "w" + i);
           h += '<td class="cell ' + (v ? "" : "zero") + (i === cw ? " curwk" : "") + dw.cls + '" data-wk="' + i + '" data-sec="' + secName + '" data-id="' + it.id + '"' + (dw.sty ? ' style="' + dw.sty + '"' : '') + dw.ttl + ' title="Kapareho ito ng week cell sa Expenses table — anuman ang ilagay mo dito, lalabas din doon (at kabaligtaran)">' + (v ? fmt(v) : "—") + '</td>';
         });
+        h += '<td style="font-weight:700;color:var(--purple)">' + (tot ? fmt(tot) + (extraHold ? '<br><span style="font-size:9px;color:var(--faint);font-weight:400">kasama ang On hold ' + fmt(extraHold) + '</span>' : '') : "—") + '</td>';
+        h += '<td style="color:#2A5E8C;font-weight:700">' + (relT ? "− " + fmt(relT) : "—") + '</td>';
+        h += '<td class="' + (remain < 0 ? "neg" : "") + '" style="font-weight:800;' + (remain >= 0 ? 'color:var(--purple)' : '') + '">' + ((tot || relT) ? fmt(remain) : "—") + '</td>';
         h += '</tr>';
       });
     }
     fpRows("weekly", m.weekly, "WEEKLY EXPENSES");
     fpRows("monthly", m.monthly, "MONTHLY EXPENSES");
     h += '<tr class="totals"><td class="nm">TOTALS</td><td class="c-due"></td><td class="c-mdue"></td><td class="c-carry">' + fmt(Math.round(fpCarryTot * 100) / 100) + '</td>';
+    fVisW.forEach(function (i) { h += '<td>' + fmt(Math.round(fpWk[i] * 100) / 100) + '</td>'; });
     h += '<td style="color:var(--purple)">' + fmt(Math.round(fpGrand * 100) / 100) + '</td>';
     h += '<td style="color:#2A5E8C">' + (fpRelTot ? "− " + fmt(Math.round(fpRelTot * 100) / 100) : "—") + '</td>';
     h += '<td class="' + (fpRemTot < 0 ? "neg" : "") + '" style="color:' + (fpRemTot < 0 ? 'var(--red)' : 'var(--purple)') + '">' + fmt(Math.round(fpRemTot * 100) / 100) + '</td>';
-    fVisW.forEach(function (i) { h += '<td>' + fmt(Math.round(fpWk[i] * 100) / 100) + '</td>'; });
     h += '</tr>';
     h += '</table></div><div class="hint">Ang W1–W4 dito ay <b>kapareho mismo ng week cells sa Weekly at Monthly Expenses tables</b> — anumang amount na ilagay mo sa expenses tables kada linggo ay awtomatikong kasama dito bilang perang naka-hold sa bank (pwede mo rin silang i-edit dito mismo, magsi-sync sa taas). Ang <b>Total Funds on Hold = Carry + week amounts + On hold extras</b>. Ang mga amounts na inilagay mo sa <b>Release Schedule</b> ay <b>awtomatikong ibinabawas</b>: <b>Natitirang Naka-hold = Total Funds on Hold − Ilalabas</b>. Kapag pula (negative) ang Natitira, mas malaki ang naka-schedule na ilabas kaysa naka-hold. Sa susunod na buwan, ang Natitirang Naka-hold ng bawat item ay awtomatikong magiging <b>Carry</b> niya.</div></div>';
 
