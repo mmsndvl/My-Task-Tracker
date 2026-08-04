@@ -92,6 +92,10 @@
   table.grid td.cell.col-proj:hover { background: #F6EBCB; }
   table.grid tr.totals td.col-proj { background: #F7EFD8; }
 
+  /* ★ 🔒 Hold-marked week cell — itatabi pa lang ang halaga, hindi pa disbursed */
+  table.grid td.cell.heldwk { background: #F5EFFB; color: var(--purple); font-weight: 700; }
+  table.grid td.cell.heldwk:hover { background: #EDE3F7; }
+
   /* ★ Cell comments — red corner triangle, like Excel */
   table.grid td.cell, table.grid td.relcell { position: relative; }
   td.has-cmt::after { content: ""; position: absolute; top: 0; right: 0; width: 0; height: 0; border-top: 7px solid var(--red); border-left: 7px solid transparent; pointer-events: none; }
@@ -175,6 +179,8 @@
   body.dark table.grid td.col-proj { background: #2C2819; border-right-color: #57492A; }
   body.dark table.grid td.cell.col-proj:hover { background: #3B341F; }
   body.dark table.grid tr.totals td.col-proj { background: #352E1D; }
+  body.dark table.grid td.cell.heldwk { background: #2E2740; }
+  body.dark table.grid td.cell.heldwk:hover { background: #382F4E; }
   body.dark table.grid td.cell[style*="background:#"], body.dark td.relcell[style*="background:#"] { color: #22302B; }
   body.dark td.relcell.reldone { background: #1E3A55 !important; }
   body.dark td.relcell.reldone .relamt { color: #9DC8EE; }
@@ -442,7 +448,28 @@
   function wexpTotal(m) { return m.weekly.reduce(function (s, i) { return s + sumW(i.w); }, 0); }
   function mexpWeek(m, wi) { return m.monthly.reduce(function (s, i) { return s + (+i.w[wi] || 0); }, 0); }
   function mexpTotal(m) { return m.monthly.reduce(function (s, i) { return s + sumW(i.w); }, 0); }
-  function itemRemaining(it) { return Math.round(((+it.projected || 0) + (+it.carry || 0) - sumW(it.w)) * 100) / 100; }
+  // ★ 🔒 Hold-marked week cells: amounts na ITATABI PA LANG sa bank (hindi pa disbursed sa bill).
+  //   Kasama pa rin sila sa expenses/net/cash-on-hand (tabi na ang pera), pero HINDI sila
+  //   bibilangin sa Paid status at Unpaid balance hangga't hindi tinatanggal ang 🔒.
+  function paidActual(it) {
+    var s = 0;
+    for (var k in it.w) { if (!(it.hw && it.hw[k])) s += (+it.w[k] || 0); }
+    return Math.round(s * 100) / 100;
+  }
+  function itemRemaining(it) { return Math.round(((+it.projected || 0) + (+it.carry || 0) - paidActual(it)) * 100) / 100; }
+  // ★ Net income of one month = income − (weekly + monthly expenses)
+  function monthNet(mm) { return Math.round((incActualTotal(mm) - wexpTotal(mm) - mexpTotal(mm)) * 100) / 100; }
+  // ★ Cash on hand carried over from ALL previous months (live-computed, kaya laging tama
+  //   kahit i-edit mo pa ang lumang buwan) + any manual adjustments (cashAdj) sa mga buwang iyon
+  function cashStartOf(ym) {
+    var keys = monthKeys(), cash = 0;
+    for (var i = 0; i < keys.length; i++) {
+      if (keys[i] >= ym) break;
+      var mm = state.months[keys[i]];
+      cash += monthNet(mm) + (+mm.cashAdj || 0);
+    }
+    return Math.round(cash * 100) / 100;
+  }
   // ★ Month-end Actual Total Expenses for one item = Carry + W1 + W2 + W3 + W4 (like the old Excel)
   function itemActual(it) { return Math.round(((+it.carry || 0) + sumW(it.w)) * 100) / 100; }
   // ★ Actual Difference from Projected = Projected − Month-end Actual (negative = lumagpas sa projected)
@@ -650,6 +677,17 @@
     h += '<div class="card stat"><div class="lbl">Net this month so far</div>' +
          '<div class="val ' + (netMonth >= 0 ? "pos" : "neg") + '">' + fmt(netMonth) + '</div>' +
          '<div class="sub2">' + fmt(incAct) + ' in − ' + fmt(expAct) + ' out</div></div>';
+    // ★ Cash on hand = puro NET INCOME lang (Income − monthly at weekly expenses),
+    //   dala-dala mula sa mga nakaraang buwan. WALANG kinalaman ang "On hold" dito —
+    //   ang mga hino-hold sa bank ay ang mismong expenses na nasa week columns na,
+    //   kaya bawas na sila sa net. Hindi na sila ibinabawas ulit.
+    var cashStart = cashStartOf(curMonth);
+    var cashAdj = +(m.cashAdj || 0);
+    var cashOnHand = Math.round((cashStart + netMonth + cashAdj) * 100) / 100;
+    h += '<div class="card stat" style="cursor:pointer;border-color:#BFD9CE" id="cashStat"><div class="lbl">💵 Cash on hand (tap to adjust)</div>' +
+         '<div class="val ' + (cashOnHand >= 0 ? "pos" : "neg") + '">' + fmt(cashOnHand) + '</div>' +
+         '<div class="sub2">Dala mula sa mga nakaraang buwan ' + fmt(cashStart) + ' + net ngayong buwan ' + fmt(netMonth) +
+         (cashAdj ? ' + adjustment ' + fmt(cashAdj) : '') + '</div></div>';
     h += '<div class="card stat"><div class="lbl">Projected leftover (full month)</div>' +
          '<div class="val ' + (projIncome - projExp >= 0 ? "pos" : "neg") + '">' + fmt(projIncome - projExp) + '</div>' +
          '<div class="sub2">' + fmt(projIncome) + ' projected − ' + fmt(projExp) + ' bills</div></div>';
@@ -702,6 +740,18 @@
     if (bs) bs.addEventListener("click", function () {
       var v = prompt("Bank balance (numbers only):", state.bank.amount === null ? "" : state.bank.amount);
       if (v !== null) { state.bank.amount = v.trim() === "" ? null : parseAmt(v); save(); renderDash(); }
+    });
+    var cs = document.getElementById("cashStat");
+    if (cs) cs.addEventListener("click", function () {
+      var v = prompt("Adjustment sa cash on hand ngayong buwan — dagdag o bawas na hindi nakalista sa app (e.g. 500 o -500). I-blangko para tanggalin:", m.cashAdj || "");
+      if (v === null) return;
+      if (String(v).trim() === "") delete m.cashAdj;
+      else {
+        var n = parseFloat(String(v).replace(/[₱,\s]/g, ""));
+        if (isNaN(n)) { toast("Numbers only po (pwede ang negative, e.g. -500).", "", null); return; }
+        m.cashAdj = Math.round(n * 100) / 100;
+      }
+      save(); renderDash();
     });
   }
 
@@ -856,8 +906,9 @@
       h += NL ? (tdProj + tdCarry) : (tdCarry + tdProj);
       mVisW.forEach(function (i) {
         var v = +it.w[i] || 0;
+        var held = !!(it.hw && it.hw[i]);
         var dw = deco(it, "w" + i);
-        h += '<td class="cell ' + (v ? "" : "zero") + (i === cw ? " curwk" : "") + dw.cls + '" data-wk="' + i + '" data-sec="monthly" data-id="' + it.id + '"' + (dw.sty ? ' style="' + dw.sty + '"' : '') + dw.ttl + '>' + (v ? fmt(v) : "—") + '</td>';
+        h += '<td class="cell ' + (v ? "" : "zero") + (i === cw ? " curwk" : "") + (held && v ? " heldwk" : "") + dw.cls + '" data-wk="' + i + '" data-sec="monthly" data-id="' + it.id + '"' + (dw.sty ? ' style="' + dw.sty + '"' : '') + dw.ttl + '>' + (v ? (held ? "🔒 " : "") + fmt(v) : "—") + '</td>';
       });
       if (NL) {
         h += '<td style="font-weight:700">' + fmt(actual) + '</td>';
@@ -888,7 +939,7 @@
       h += '<td>' + fmt(mexpTotal(m)) + '</td><td class="' + (mrem > 0 ? "neg" : "pos") + '">' + fmt(mrem) + '</td>';
     }
     h += (mShowHold ? '<td>' + fmt(m.monthly.reduce(function (s, i) { return s + (+i.hold || 0); }, 0)) + '</td>' : '') + '</tr>';
-    h += '</table></div><div class="hint">Tap any amount to edit — sa editor: 💬 comment, 🎨 kulay ng cell. ' +
+    h += '</table></div><div class="hint">Tap any amount to edit — sa editor: 💬 comment, 🎨 kulay ng cell, <b>🔒 = "itatabi pa lang"</b>: markahan ang week amount na tinabi mo sa bank pero HINDI PA disbursed sa bill (magiging purple na may 🔒) — hindi ito bibilangin sa Paid status at Unpaid balance hangga\'t naka-🔒; i-tap ulit ang 🔒 kapag na-disburse na. ' +
          (NL ? '<b>"Month-end Actual"</b> = Carry + W1–W4, ang kabuuang aktwal na gastos ngayong buwan. <b>"Diff vs Projected"</b> = Projected − Actual: positive (green) = hindi lumagpas sa projected; negative (red) = lumagpas. ' : '') +
          '<b>"Carry"</b> = ang perang na-hold mo sa bank noong nakaraang buwan para sa item na ito — awtomatikong dinadala sa bagong buwan at dinadagdag sa babayaran/pondo. <b>"On hold"</b> = perang naka-set aside sa bank ngayong buwan.</div></div>';
 
@@ -1033,10 +1084,12 @@
            m.weekly.filter(function (x) { return x.id === id; })[0];
   }
   // ★ Shared editor extras: comment (💬) and cell color (🎨) buttons
-  function editorExtrasHTML(curCmt) {
+  function editorExtrasHTML(curCmt, showLock, lockOn) {
     return '<span class="cellbtns">' +
       '<button class="cellbtn" data-cb="cmt" title="Add / edit comment">💬</button>' +
-      '<button class="cellbtn" data-cb="clr" title="Cell color">🎨</button></span>' +
+      '<button class="cellbtn" data-cb="clr" title="Cell color">🎨</button>' +
+      (showLock ? '<button class="cellbtn" data-cb="lock" title="' + (lockOn ? "Naka-🔒: itatabi pa lang ang halagang ito. I-click para markahang DISBURSED na." : "I-markang ITATABI PA LANG (hindi pa disbursed) — hindi ito bibilangin sa Paid status") + '" style="' + (lockOn ? 'background:#F1E9F9;' : '') + '">' + (lockOn ? "🔒" : "🔓") + '</button>' : '') +
+      '</span>' +
       '<div class="swatches" style="display:none">' +
       SWATCH.map(function (c) { return '<button class="sw" data-sw="' + c + '" style="background:' + c + '" title="Kulayan ang cell"></button>'; }).join("") +
       '<button class="sw" data-sw="" style="background:#fff" title="Tanggalin ang kulay">✕</button></div>' +
@@ -1060,6 +1113,14 @@
       var sws = container.querySelector(".swatches");
       sws.style.display = sws.style.display === "none" ? "flex" : "none";
       inp.focus();
+    });
+    var lb = container.querySelector('[data-cb="lock"]');
+    if (lb) lb.addEventListener("click", function () {
+      var wkk = key.slice(1);   // "w0" → "0"
+      commit(function () {
+        it.hw = it.hw || {};
+        if (it.hw[wkk]) delete it.hw[wkk]; else it.hw[wkk] = true;
+      });
     });
     Array.prototype.forEach.call(container.querySelectorAll("[data-sw]"), function (b) {
       b.addEventListener("click", function () {
@@ -1109,15 +1170,17 @@
     var key = wk !== null ? "w" + wk : fld;
     var cur = wk !== null ? (+it.w[wk] || 0) : (+it[fld] || 0);
     var curCmt = (it.cmt && it.cmt[key]) || "";
+    var showLock = (sec === "monthly" && wk !== null);
+    var lockOn = showLock && !!(it.hw && it.hw[wk]);
     td.classList.remove("has-cmt");
-    td.innerHTML = '<input class="cellinput" type="text" inputmode="decimal" value="' + (cur || "") + '">' + editorExtrasHTML(curCmt);
+    td.innerHTML = '<input class="cellinput" type="text" inputmode="decimal" value="' + (cur || "") + '">' + editorExtrasHTML(curCmt, showLock, lockOn);
     var inp = td.querySelector("input");
     inp.focus(); inp.select();
     var committed = false;
     function commit(extra) {
       if (committed) return; committed = true;
       var v = parseAmt(inp.value);
-      if (wk !== null) { if (v) it.w[wk] = v; else delete it.w[wk]; }
+      if (wk !== null) { if (v) it.w[wk] = v; else { delete it.w[wk]; if (it.hw) delete it.hw[wk]; } }
       else it[fld] = v;
       if (extra) extra();
       save(); renderAll();
