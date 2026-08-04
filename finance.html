@@ -530,9 +530,15 @@
   function itemHoldOf(it) { return Math.round(((+it.hold || 0) + fhTotal(it)) * 100) / 100; }
   // ★ Kabuuan ng nakalagay sa Release Schedule para sa item — ibinabawas sa naka-hold na funds
   function relTotalOf(it) { return Math.round(sumW(it.rel || {}) * 100) / 100; }
+  // ★ Natitirang naka-hold ng isang item = Carry (kung monthly) + mga in-hold − mga inilabas
+  function itemHeldRemain(it, isMonthly) {
+    return Math.round(((isMonthly ? (+it.carry || 0) : 0) + itemHoldOf(it) - relTotalOf(it)) * 100) / 100;
+  }
   function holdTotal(m) {
-    var f = function (s, i) { return s + Math.max(0, itemHoldOf(i) - relTotalOf(i)); };
-    return Math.round((m.monthly.reduce(f, 0) + m.weekly.reduce(f, 0)) * 100) / 100;
+    var s = 0;
+    m.monthly.forEach(function (i) { s += Math.max(0, itemHeldRemain(i, true)); });
+    m.weekly.forEach(function (i) { s += Math.max(0, itemHeldRemain(i, false)); });
+    return Math.round(s * 100) / 100;
   }
   // ★ Iisang storage na lang para sa holds: anumang lumang it.hold value ay inililipat
   //   sa Funds Planner (it.fh) sa kasalukuyang linggo ng buwang iyon. Idempotent at
@@ -774,10 +780,10 @@
          '<div class="val ' + (projIncome - projExp >= 0 ? "pos" : "neg") + '">' + fmt(projIncome - projExp) + '</div>' +
          '<div class="sub2">' + fmt(projIncome) + ' projected − ' + fmt(projExp) + ' bills</div></div>';
     h += '<div class="card stat"><div class="lbl">Funds on hold</div><div class="val" style="color:var(--purple)">' + fmt(holds) + '</div>' +
-         '<div class="sub2">🔒 Iiwan sa bank para sa bills (weekly + monthly)</div></div>';
+         '<div class="sub2">🔒 Natitirang naka-hold sa bank (kasama ang Carry, bawas ang Release)</div></div>';
     h += '<div class="card stat"><div class="lbl">Safe i-withdraw / ilipat</div>' +
-         '<div class="val ' + (netMonth - holds >= 0 ? "pos" : "neg") + '">' + fmt(netMonth - holds) + '</div>' +
-         '<div class="sub2">Net so far − funds on hold</div></div>';
+         '<div class="val ' + (cashOnHand >= 0 ? "pos" : "neg") + '">' + fmt(cashOnHand) + '</div>' +
+         '<div class="sub2">= 💵 Cash on hand — malayang pera, hiwalay sa naka-hold</div></div>';
     h += '<div class="card stat" style="cursor:pointer" id="bankStat"><div class="lbl">' + esc(state.bank.name || "Bank balance") + ' (tap to edit)</div>' +
          '<div class="val neu">' + (state.bank.amount === null ? "—" : fmt(state.bank.amount)) + '</div>' +
          '<div class="sub2">Your own note — update anytime</div></div>';
@@ -1073,7 +1079,7 @@
     // 🏦 FUNDS PLANNER — her Excel's "Payables – Pending Disbursement": what to LEAVE in the bank vs what's safe to withdraw
     var netSoFar = incAct - expAct;
     var holds = holdTotal(m);
-    var withdrawable = Math.round((netSoFar - holds) * 100) / 100;
+    var plannerCash = Math.round((cashStartOf(curMonth) + netSoFar - savTotal(m) + (+m.cashAdj || 0)) * 100) / 100;
     h += '<div class="sidebyside">';
     var fVisW = []; ws.forEach(function (w, i) { if (!hidCol("fp", "w" + i)) fVisW.push(i); });
     var fHidden = ws.length - fVisW.length;
@@ -1083,14 +1089,15 @@
     h += '<div class="card stat" style="border-color:#D9C7F0"><div class="lbl">🔒 Iiwan sa bank (naka-hold para sa bills)</div>' +
          '<div class="val" style="color:var(--purple)">' + fmt(holds) + '</div>' +
          '<div class="sub2">Natitirang naka-hold (bawas na ang naka-schedule sa Release)</div></div>';
-    h += '<div class="card stat" style="border-color:#BFE0D0"><div class="lbl">💸 Safe i-withdraw / ilipat sa other bank</div>' +
-         '<div class="val ' + (withdrawable >= 0 ? "pos" : "neg") + '">' + fmt(withdrawable) + '</div>' +
-         '<div class="sub2">Net na natitira ' + fmt(netSoFar) + ' − naka-hold ' + fmt(holds) + '</div></div>';
+    h += '<div class="card stat" style="border-color:#BFE0D0"><div class="lbl">💸 Safe i-withdraw (= Cash on hand)</div>' +
+         '<div class="val ' + (plannerCash >= 0 ? "pos" : "neg") + '">' + fmt(plannerCash) + '</div>' +
+         '<div class="sub2">Malayang pera — hiwalay sa naka-hold na funds</div></div>';
     h += '</div>';
-    var fpCols = 4 + fVisW.length + 3;
-    h += '<div class="scrollx"><table class="grid"><tr><th class="nm">Payee</th><th>Due</th><th>Monthly<br>Amount Due</th><th>Carry<br><span style="font-weight:400;text-transform:none">(carried over)</span></th>';
+    var fpCols = 4 + 3 + fVisW.length;
+    h += '<div class="scrollx"><table class="grid"><tr><th class="nm">Payee</th><th>Due</th><th>Monthly<br>Amount Due</th><th>Carry<br><span style="font-weight:400;text-transform:none">(carried over)</span></th>' +
+         '<th>Total Funds<br>on Hold</th><th style="color:#2A5E8C">Ilalabas<br><span style="font-weight:400;text-transform:none">(Release Sched)</span></th><th style="color:var(--purple)">Natitirang<br>Naka-hold</th>';
     fVisW.forEach(function (i) { h += '<th>W' + (i + 1) + '<br>' + wkLabel(ws[i]) + '</th>'; });
-    h += '<th>Total Funds<br>on Hold</th><th>Ilalabas<br><span style="font-weight:400;text-transform:none">(Release Sched)</span></th><th>Natitirang<br>Naka-hold</th></tr>';
+    h += '</tr>';
     var fpWk = []; ws.forEach(function () { fpWk.push(0); });
     var fpCarryTot = 0, fpGrand = 0, fpRelTot = 0, fpRemTot = 0;
     function fpRows(secName, items, label) {
@@ -1111,6 +1118,9 @@
         if (isM) {
           h += '<td class="cell ' + (carry ? "" : "zero") + '" data-fld="carry" data-sec="monthly" data-id="' + it.id + '">' + (carry ? fmt(carry) : "—") + '</td>';
         } else h += '<td style="color:#C4CFC9">—</td>';
+        h += '<td style="font-weight:700;color:var(--purple)">' + (tot ? fmt(tot) + (extraHold ? '<br><span style="font-size:9px;color:var(--faint);font-weight:400">kasama ang On hold ' + fmt(extraHold) + '</span>' : '') : "—") + '</td>';
+        h += '<td style="color:#2A5E8C;font-weight:700">' + (relT ? "− " + fmt(relT) : "—") + '</td>';
+        h += '<td class="' + (remain < 0 ? "neg" : "") + '" style="font-weight:800;' + (remain >= 0 ? 'color:var(--purple)' : '') + '">' + ((tot || relT) ? fmt(remain) : "—") + '</td>';
         var fh = it.fh || {};
         fVisW.forEach(function (i) {
           var v = +fh[i] || 0; fpWk[i] += v;
@@ -1118,18 +1128,17 @@
           h += '<td class="relcell' + (i === cw ? " curwk" : "") + df.cls + '"' + (df.sty ? ' style="' + df.sty + '"' : '') + df.ttl + '>' +
                '<span class="fhamt relamt" data-fhwk="' + i + '" data-id="' + it.id + '" title="Tap para ilagay kung magkano ang itatabi sa bank sa linggong ito para sa payee na ito">' + (v ? fmt(v) : "—") + '</span></td>';
         });
-        h += '<td style="font-weight:700;color:var(--purple)">' + (tot ? fmt(tot) + (extraHold ? '<br><span style="font-size:9px;color:var(--faint);font-weight:400">kasama ang On hold ' + fmt(extraHold) + '</span>' : '') : "—") + '</td>';
-        h += '<td style="color:#2A5E8C;font-weight:700">' + (relT ? "− " + fmt(relT) : "—") + '</td>';
-        h += '<td class="' + (remain < 0 ? "neg" : "") + '" style="font-weight:800;' + (remain >= 0 ? 'color:var(--purple)' : '') + '">' + ((tot || relT) ? fmt(remain) : "—") + '</td></tr>';
+        h += '</tr>';
       });
     }
     fpRows("weekly", m.weekly, "WEEKLY EXPENSES");
     fpRows("monthly", m.monthly, "MONTHLY EXPENSES");
     h += '<tr class="totals"><td class="nm">TOTALS</td><td></td><td></td><td>' + fmt(Math.round(fpCarryTot * 100) / 100) + '</td>';
-    fVisW.forEach(function (i) { h += '<td>' + fmt(Math.round(fpWk[i] * 100) / 100) + '</td>'; });
     h += '<td style="color:var(--purple)">' + fmt(Math.round(fpGrand * 100) / 100) + '</td>';
     h += '<td style="color:#2A5E8C">' + (fpRelTot ? "− " + fmt(Math.round(fpRelTot * 100) / 100) : "—") + '</td>';
-    h += '<td class="' + (fpRemTot < 0 ? "neg" : "") + '" style="color:' + (fpRemTot < 0 ? 'var(--red)' : 'var(--purple)') + '">' + fmt(Math.round(fpRemTot * 100) / 100) + '</td></tr>';
+    h += '<td class="' + (fpRemTot < 0 ? "neg" : "") + '" style="color:' + (fpRemTot < 0 ? 'var(--red)' : 'var(--purple)') + '">' + fmt(Math.round(fpRemTot * 100) / 100) + '</td>';
+    fVisW.forEach(function (i) { h += '<td>' + fmt(Math.round(fpWk[i] * 100) / 100) + '</td>'; });
+    h += '</tr>';
     h += '</table></div><div class="hint">Katulad ng luma mong Excel: dito mo pinaplano kung <b>magkano ang itatabi (i-hold) sa bank kada linggo</b> para sa bawat payee. Tap ang week cell para maglagay o magbago ng halaga (may 💬 comment at 🎨 kulay din). Ang <b>Total Funds on Hold = Carry + kabuuan ng weekly amounts</b>. Ang mga amounts na inilagay mo sa <b>Release Schedule</b> ay <b>awtomatikong ibinabawas dito</b>: <b>Natitirang Naka-hold = Total Funds on Hold − Ilalabas</b>. Kapag pula (negative) ang Natitira, mas malaki ang naka-schedule na ilabas kaysa naka-hold. Sa susunod na buwan, ang Natitirang Naka-hold ng bawat item ay awtomatikong magiging <b>Carry</b> niya.</div></div>';
 
     // 📤 RELEASE SCHEDULE — her Excel's right-side columns: money to take OUT of the bank each week; light blue = released na
