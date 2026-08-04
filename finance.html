@@ -255,7 +255,7 @@
     </div>
     <div class="mrow" id="imExtraRow">
       <div id="imCarryWrap"><label>Carry — funds na na-hold sa bank last month (₱)</label><input id="imCarry" type="text" inputmode="decimal"></div>
-      <div id="imHoldWrap"><label>Funds on hold in bank (₱)</label><input id="imHold" type="text" inputmode="decimal"></div>
+      <div id="imHoldWrap"><label>On hold ngayong linggo (₱) — mapupunta sa Funds Planner</label><input id="imHold" type="text" inputmode="decimal"></div>
     </div>
     <div class="mnote" id="imNote"></div>
     <div class="acts">
@@ -409,13 +409,13 @@
       m.incomes.push({ id: uid(), name: it.name, projected: it.projected || 0, w: {} });
     });
     (src.weekly || []).forEach(function (it) {
-      m.weekly.push({ id: uid(), name: it.name, due: it.due || "", alloc: it.alloc || 0, hold: +it.hold || 0, w: {} });
+      m.weekly.push({ id: uid(), name: it.name, due: it.due || "", alloc: it.alloc || 0, hold: itemHoldOf(it), w: {} });
     });
     (src.monthly || []).forEach(function (it) {
-      // ★ Carry = the funds that were ON HOLD in the bank last month —
-      //   they stay in the bank and are added to the new month for this item.
+      // ★ Carry = the funds that were ON HOLD in the bank last month (manual On hold + Funds
+      //   Planner weekly allocations) — they stay in the bank and are added to the new month.
       m.monthly.push({ id: uid(), name: it.name, due: it.due || "", alloc: it.alloc || 0,
-                       projected: it.projected || 0, carry: +it.hold || 0, hold: 0, w: {}, rel: {}, relDone: {} });
+                       projected: it.projected || 0, carry: itemHoldOf(it), hold: 0, w: {}, rel: {}, relDone: {} });
     });
     (src.savings || []).forEach(function (it) {
       m.savings.push({ id: uid(), name: it.name, w: {} });
@@ -451,6 +451,7 @@
       (mm[sec] || []).forEach(function (it) {
         if (sumW(it.w) > 0 || (+it.hold || 0) > 0 || (+it.carry || 0) > 0) any = true;
         if (it.rel && Object.keys(it.rel).length) any = true;
+        if (it.fh && Object.keys(it.fh).length) any = true;
       });
     });
     return any;
@@ -521,9 +522,30 @@
   function itemActual(it) { return Math.round(((+it.carry || 0) + sumW(it.w)) * 100) / 100; }
   // ★ Actual Difference from Projected = Projected − Month-end Actual (negative = lumagpas sa projected)
   function itemDiffProj(it) { return Math.round(((+it.projected || 0) - itemActual(it)) * 100) / 100; }
+  // ★ Funds Planner weekly hold allocations (it.fh) — plano kung magkano ang itatabi sa bank kada linggo
+  function fhTotal(it) { return Math.round(sumW(it.fh || {}) * 100) / 100; }
+  function itemHoldOf(it) { return Math.round(((+it.hold || 0) + fhTotal(it)) * 100) / 100; }
   function holdTotal(m) {
-    return m.monthly.reduce(function (s, i) { return s + (+i.hold || 0); }, 0) +
-           m.weekly.reduce(function (s, i) { return s + (+i.hold || 0); }, 0);
+    return Math.round((m.monthly.reduce(function (s, i) { return s + itemHoldOf(i); }, 0) +
+           m.weekly.reduce(function (s, i) { return s + itemHoldOf(i); }, 0)) * 100) / 100;
+  }
+  // ★ Iisang storage na lang para sa holds: anumang lumang it.hold value ay inililipat
+  //   sa Funds Planner (it.fh) sa kasalukuyang linggo ng buwang iyon. Idempotent at
+  //   hindi nagbabago ang kabuuang halaga — ayos lang kahit maulit sa ibang device.
+  function migrateHolds() {
+    for (var ym in state.months) {
+      var mm = state.months[ym];
+      var cwi = currentWeekIndex(ym); if (cwi < 0) cwi = 0;
+      ["weekly", "monthly"].forEach(function (sec) {
+        (mm[sec] || []).forEach(function (it) {
+          if ((+it.hold || 0) > 0) {
+            it.fh = it.fh || {};
+            it.fh[cwi] = Math.round(((+it.fh[cwi] || 0) + (+it.hold)) * 100) / 100;
+            it.hold = 0;
+          }
+        });
+      });
+    }
   }
   function dueInfo(it) {
     // Manual override first (user tapped the status chip)
@@ -608,6 +630,7 @@
     state.cols = remote.cols || {};
     state.dark = !!remote.dark;
     docUpdatedAt = remote.updatedAt || Date.now();
+    migrateHolds();
     try { localStorage.setItem(KEY, JSON.stringify(currentDoc())); } catch (e) {}
     if (!state.months[curMonth]) curMonth = ensureCurrentMonth();
     applyTheme();
@@ -898,15 +921,16 @@
       });
       h += '<td style="font-weight:700">' + fmt(sumW(it.w)) + '</td>';
       if (wShowHold) {
-        var dh = deco(it, "hold");
-        h += '<td class="cell ' + ((+it.hold || 0) ? "" : "zero") + dh.cls + '" data-fld="hold" data-sec="weekly" data-id="' + it.id + '" style="color:var(--purple);font-weight:700;' + dh.sty + '"' + dh.ttl + '>' + ((+it.hold || 0) ? fmt(+it.hold) : "—") + '</td>';
+        var wHoldV = itemHoldOf(it);
+        var dh = deco(it, "f" + (cw >= 0 ? cw : 0));
+        h += '<td class="cell ' + (wHoldV ? "" : "zero") + dh.cls + '" data-fld="hold" data-sec="weekly" data-id="' + it.id + '" style="color:var(--purple);font-weight:700;' + dh.sty + '"' + dh.ttl + ' title="Kabuuang naka-hold (mula sa Funds Planner). Tap para i-edit ang hold ngayong linggo — awtomatikong mapupunta sa Funds Planner.">' + (wHoldV ? fmt(wHoldV) : "—") + '</td>';
       }
       h += '</tr>';
     });
     h += '<tr class="totals"><td class="nm">TOTAL WEEKLY</td>' + (wShowAlloc ? '<td>' + fmt(m.weekly.reduce(function (s, i) { return s + (+i.alloc || 0); }, 0)) + '</td>' : '');
     wVisW.forEach(function (i) { h += '<td>' + fmt(wexpWeek(m, i)) + '</td>'; });
-    h += '<td>' + fmt(wexpTotal(m)) + '</td>' + (wShowHold ? '<td style="color:var(--purple)">' + fmt(m.weekly.reduce(function (s, i) { return s + (+i.hold || 0); }, 0)) + '</td>' : '') + '</tr></table></div>' +
-         '<div class="hint">"On hold" = perang naka-set aside sa bank para sa weekly item na ito — kasama sa Funds Planner sa ibaba. Tap para i-edit.</div></div>';
+    h += '<td>' + fmt(wexpTotal(m)) + '</td>' + (wShowHold ? '<td style="color:var(--purple)">' + fmt(m.weekly.reduce(function (s, i) { return s + itemHoldOf(i); }, 0)) + '</td>' : '') + '</tr></table></div>' +
+         '<div class="hint">"On hold" = kabuuang perang naka-set aside sa bank para sa weekly item na ito — konektado sa Funds Planner sa ibaba: kapag naglagay ka dito, awtomatikong mapupunta sa planner sa kasalukuyang linggo. Tap para i-edit.</div></div>';
 
     // Monthly section
     // ★ Two layouts: NEW (Aug 2026 onwards) = Status → Projected → Carry → weeks → Month-end Actual → Diff vs Projected → On hold
@@ -972,8 +996,9 @@
         h += '<td style="font-weight:800" class="' + (rem > 0 ? "neg" : "pos") + '">' + fmt(rem) + '</td>';
       }
       if (mShowHold) {
-        var dh2 = deco(it, "hold");
-        h += '<td class="cell ' + ((+it.hold || 0) ? "" : "zero") + dh2.cls + '" data-fld="hold" data-sec="monthly" data-id="' + it.id + '" style="' + dh2.sty + '"' + dh2.ttl + '>' + ((+it.hold || 0) ? fmt(+it.hold) : "—") + '</td>';
+        var mHoldV = itemHoldOf(it);
+        var dh2 = deco(it, "f" + (cw >= 0 ? cw : 0));
+        h += '<td class="cell ' + (mHoldV ? "" : "zero") + dh2.cls + '" data-fld="hold" data-sec="monthly" data-id="' + it.id + '" style="color:var(--purple);font-weight:700;' + dh2.sty + '"' + dh2.ttl + ' title="Kabuuang naka-hold (mula sa Funds Planner). Tap para i-edit ang hold ngayong linggo — awtomatikong mapupunta sa Funds Planner.">' + (mHoldV ? fmt(mHoldV) : "—") + '</td>';
       }
       h += '</tr>';
     });
@@ -992,7 +1017,7 @@
     } else {
       h += '<td>' + fmt(mexpTotal(m)) + '</td><td class="' + (mrem > 0 ? "neg" : "pos") + '">' + fmt(mrem) + '</td>';
     }
-    h += (mShowHold ? '<td>' + fmt(m.monthly.reduce(function (s, i) { return s + (+i.hold || 0); }, 0)) + '</td>' : '') + '</tr>';
+    h += (mShowHold ? '<td>' + fmt(m.monthly.reduce(function (s, i) { return s + itemHoldOf(i); }, 0)) + '</td>' : '') + '</tr>';
     h += '</table></div><div class="hint">Tap any amount to edit — sa editor: 💬 comment, 🎨 kulay ng cell, <b>🔒 = "itatabi pa lang"</b>: markahan ang week amount na tinabi mo sa bank pero HINDI PA disbursed sa bill (magiging purple na may 🔒) — hindi ito bibilangin sa Paid status at Unpaid balance hangga\'t naka-🔒; i-tap ulit ang 🔒 kapag na-disburse na. ' +
          (NL ? '<b>"Month-end Actual"</b> = Carry + W1–W4, ang kabuuang aktwal na gastos ngayong buwan. <b>"Diff vs Projected"</b> = Projected − Actual: positive (green) = hindi lumagpas sa projected; negative (red) = lumagpas. ' : '') +
          '<b>"Carry"</b> = ang perang na-hold mo sa bank noong nakaraang buwan para sa item na ito — awtomatikong dinadala sa bagong buwan at dinadagdag sa babayaran/pondo. <b>"On hold"</b> = perang naka-set aside sa bank ngayong buwan.</div></div>';
@@ -1045,7 +1070,10 @@
     var holds = holdTotal(m);
     var withdrawable = Math.round((netSoFar - holds) * 100) / 100;
     h += '<div class="sidebyside">';
-    h += '<div class="card gridcard"><div class="gridhead"><div class="t">🏦 Funds Planner — Iwan sa Bank vs. Pwedeng I-withdraw</div></div>';
+    var fVisW = []; ws.forEach(function (w, i) { if (!hidCol("fp", "w" + i)) fVisW.push(i); });
+    var fHidden = ws.length - fVisW.length;
+    h += '<div class="card gridcard"><div class="gridhead"><div class="t">🏦 Funds Planner — Funds on Hold per Week</div>' +
+         '<div class="gbtns"><button class="btn-cols" data-cols="fp">👁 Columns' + (fHidden ? " (" + fHidden + " hidden)" : "") + '</button></div></div>';
     h += '<div class="statgrid" style="margin:0 0 12px">';
     h += '<div class="card stat" style="border-color:#D9C7F0"><div class="lbl">🔒 Iiwan sa bank (naka-hold para sa bills)</div>' +
          '<div class="val" style="color:var(--purple)">' + fmt(holds) + '</div>' +
@@ -1054,35 +1082,44 @@
          '<div class="val ' + (withdrawable >= 0 ? "pos" : "neg") + '">' + fmt(withdrawable) + '</div>' +
          '<div class="sub2">Net na natitira ' + fmt(netSoFar) + ' − naka-hold ' + fmt(holds) + '</div></div>';
     h += '</div>';
-    h += '<div class="scrollx"><table class="grid"><tr><th class="nm">Bill / Payable</th><th>Due</th><th>Status</th><th>Unpaid balance</th><th>On hold sa bank</th><th></th></tr>';
-    var anyRows = false;
-    m.monthly.forEach(function (it) {
-      var rem = itemRemaining(it);
-      var hv = +it.hold || 0;
-      if (rem <= 0 && hv <= 0) return;   // fully paid & nothing held — hidden here
-      anyRows = true;
-      var info = dueInfo(it);
-      h += '<tr><td class="nm" data-edit="monthly" data-id="' + it.id + '">' + esc(it.name) + '</td>';
-      h += '<td style="text-align:right">' + (it.due ? esc(it.due) : "—") + '</td>';
-      h += '<td>' + (info ? '<span class="st ' + info.cls + '">' + info.label + '</span>' : '—') + '</td>';
-      h += '<td class="' + (rem > 0 ? "neg" : "pos") + '" style="font-weight:700">' + fmt(rem) + '</td>';
-      h += '<td class="cell ' + (hv ? "" : "zero") + '" data-fld="hold" data-sec="monthly" data-id="' + it.id + '" style="font-weight:700;color:var(--purple)">' + (hv ? fmt(hv) : "—") + '</td>';
-      h += '<td>' + (rem > 0 && Math.abs(hv - rem) > 0.01 ? '<button class="btn-mini" style="background:#F1E9F9;color:var(--purple);font-size:10px;padding:4px 8px" data-holdall="' + it.id + '" title="I-hold ang buong unpaid balance">Hold ' + fmt(rem) + '</button>' : '') + '</td></tr>';
-    });
-    m.weekly.forEach(function (it) {
-      var hv = +it.hold || 0;
-      if (hv <= 0) return;
-      anyRows = true;
-      h += '<tr><td class="nm" data-edit="weekly" data-id="' + it.id + '">' + esc(it.name) + ' <span class="due">weekly</span></td>';
-      h += '<td style="text-align:right">' + (it.due ? esc(it.due) : "—") + '</td>';
-      h += '<td><span class="st st-hold">On hold</span></td>';
-      h += '<td>—</td>';
-      h += '<td class="cell" data-fld="hold" data-sec="weekly" data-id="' + it.id + '" style="font-weight:700;color:var(--purple)">' + fmt(hv) + '</td>';
-      h += '<td></td></tr>';
-    });
-    if (!anyRows) h += '<tr><td colspan="6"><div class="empty">Lahat bayad na at walang naka-hold. 🎉</div></td></tr>';
-    h += '<tr class="totals"><td class="nm">TOTALS</td><td></td><td></td><td>' + fmt(m.monthly.reduce(function (s, i) { return s + Math.max(0, itemRemaining(i)); }, 0)) + '</td><td style="color:var(--purple)">' + fmt(holds) + '</td><td></td></tr>';
-    h += '</table></div><div class="hint">Ang "On hold" ay perang iiwan mo sa bank para sa bill na yan — tap ang amount para i-edit, o tap ang "Hold" button para i-hold agad ang buong unpaid balance. Sa pagtatapos ng buwan, ang mga naka-hold na funds ay awtomatikong magiging <b>"Carry"</b> ng susunod na buwan — mananatili sa bank at madadagdag sa pondo ng item na iyon. Kapag binayaran mo na ang bill (nailagay mo na sa week cell sa taas), ibaba mo o i-zero ang hold niya.</div></div>';
+    var fpCols = 4 + fVisW.length + 1;
+    h += '<div class="scrollx"><table class="grid"><tr><th class="nm">Payee</th><th>Due</th><th>Monthly<br>Amount Due</th><th>Carry<br><span style="font-weight:400;text-transform:none">(carried over)</span></th>';
+    fVisW.forEach(function (i) { h += '<th>W' + (i + 1) + '<br>' + wkLabel(ws[i]) + '</th>'; });
+    h += '<th>Total Funds<br>on Hold</th></tr>';
+    var fpWk = []; ws.forEach(function () { fpWk.push(0); });
+    var fpCarryTot = 0, fpGrand = 0;
+    function fpRows(secName, items, label) {
+      h += '<tr><td colspan="' + fpCols + '" style="background:#FBE7E4;color:var(--red);font-weight:800;font-size:10px;letter-spacing:.4px">' + label + '</td></tr>';
+      if (!items.length) { h += '<tr><td colspan="' + fpCols + '" style="color:var(--faint);font-size:11px">Wala pang items.</td></tr>'; return; }
+      items.forEach(function (it) {
+        var isM = secName === "monthly";
+        var mdue = isM ? (+it.projected || 0) : Math.round((+it.alloc || 0) * ws.length * 100) / 100;
+        var carry = isM ? (+it.carry || 0) : 0;
+        var extraHold = +it.hold || 0;
+        var tot = Math.round((carry + fhTotal(it) + extraHold) * 100) / 100;
+        fpCarryTot += carry; fpGrand += tot;
+        h += '<tr><td class="nm" data-edit="' + secName + '" data-id="' + it.id + '">' + esc(it.name) + '</td>';
+        h += '<td style="text-align:right">' + (it.due ? esc(it.due) : "—") + '</td>';
+        h += '<td>' + (mdue ? fmt(mdue) : "—") + '</td>';
+        if (isM) {
+          h += '<td class="cell ' + (carry ? "" : "zero") + '" data-fld="carry" data-sec="monthly" data-id="' + it.id + '">' + (carry ? fmt(carry) : "—") + '</td>';
+        } else h += '<td style="color:#C4CFC9">—</td>';
+        var fh = it.fh || {};
+        fVisW.forEach(function (i) {
+          var v = +fh[i] || 0; fpWk[i] += v;
+          var df = deco(it, "f" + i);
+          h += '<td class="relcell' + (i === cw ? " curwk" : "") + df.cls + '"' + (df.sty ? ' style="' + df.sty + '"' : '') + df.ttl + '>' +
+               '<span class="fhamt relamt" data-fhwk="' + i + '" data-id="' + it.id + '" title="Tap para ilagay kung magkano ang itatabi sa bank sa linggong ito para sa payee na ito">' + (v ? fmt(v) : "—") + '</span></td>';
+        });
+        h += '<td style="font-weight:800;color:var(--purple)">' + (tot ? fmt(tot) + (extraHold ? '<br><span style="font-size:9px;color:var(--faint);font-weight:400">kasama ang On hold ' + fmt(extraHold) + '</span>' : '') : "—") + '</td></tr>';
+      });
+    }
+    fpRows("weekly", m.weekly, "WEEKLY EXPENSES");
+    fpRows("monthly", m.monthly, "MONTHLY EXPENSES");
+    h += '<tr class="totals"><td class="nm">TOTALS</td><td></td><td></td><td>' + fmt(Math.round(fpCarryTot * 100) / 100) + '</td>';
+    fVisW.forEach(function (i) { h += '<td>' + fmt(Math.round(fpWk[i] * 100) / 100) + '</td>'; });
+    h += '<td style="color:var(--purple)">' + fmt(Math.round(fpGrand * 100) / 100) + '</td></tr>';
+    h += '</table></div><div class="hint">Katulad ng luma mong Excel: dito mo pinaplano kung <b>magkano ang itatabi (i-hold) sa bank kada linggo</b> para sa bawat payee. Tap ang week cell para maglagay o magbago ng halaga (may 💬 comment at 🎨 kulay din). Ang <b>Total Funds on Hold = Carry + kabuuan ng weekly amounts</b> (kasama rin ang manual na "On hold" kung may nilagay ka sa column na iyon sa taas). Kasama ang mga ito sa "🔒 Iiwan sa bank" at sa Dashboard, at sa susunod na buwan, awtomatiko silang magiging <b>Carry</b> ng bawat item.</div></div>';
 
     // 📤 RELEASE SCHEDULE — her Excel's right-side columns: money to take OUT of the bank each week; light blue = released na
     function relOf(it) { return it.rel || {}; }
@@ -1210,6 +1247,35 @@
       });
     });
   }
+  // ★ Funds Planner cell editor — per-week na itatabi sa bank (it.fh)
+  function beginFhEdit(sp) {
+    var id = sp.getAttribute("data-id"), wk = sp.getAttribute("data-fhwk");
+    var it = findRelItem(id);
+    if (!it) return;
+    it.fh = it.fh || {};
+    var key = "f" + wk;
+    var cur = +it.fh[wk] || 0;
+    var curCmt = (it.cmt && it.cmt[key]) || "";
+    var td = sp.closest("td");
+    td.classList.remove("has-cmt");
+    td.innerHTML = '<input class="cellinput" type="text" inputmode="decimal" value="' + (cur || "") + '">' + editorExtrasHTML(curCmt);
+    var inp = td.querySelector("input");
+    inp.focus(); inp.select();
+    var committed = false;
+    function commit(extra) {
+      if (committed) return; committed = true;
+      var v = parseAmt(inp.value);
+      if (v) it.fh[wk] = v; else delete it.fh[wk];
+      if (extra) extra();
+      save(); renderAll();
+    }
+    inp.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") commit();
+      if (e.key === "Escape") { committed = true; renderAll(); }
+    });
+    inp.addEventListener("blur", function () { setTimeout(function () { commit(); }, 140); });
+    wireEditorExtras(td, inp, it, key, commit);
+  }
   function beginRelEdit(sp) {
     var id = sp.getAttribute("data-id"), wk = sp.getAttribute("data-relwk");
     var it = findRelItem(id);
@@ -1245,8 +1311,13 @@
     var m = M();
     var it = m[sec].filter(function (x) { return x.id === id; })[0];
     if (!it) return;
-    var key = wk !== null ? "w" + wk : fld;
-    var cur = wk !== null ? (+it.w[wk] || 0) : (+it[fld] || 0);
+    // ★ "On hold" cells write straight into the Funds Planner (it.fh) sa kasalukuyang linggo,
+    //   para iisa lang ang data ng On hold column at ng Funds Planner — laging magkatugma.
+    var holdMode = (fld === "hold");
+    var hwk = 0;
+    if (holdMode) { hwk = currentWeekIndex(curMonth); if (hwk < 0) hwk = 0; }
+    var key = wk !== null ? "w" + wk : (holdMode ? "f" + hwk : fld);
+    var cur = wk !== null ? (+it.w[wk] || 0) : holdMode ? (+((it.fh || {})[hwk]) || 0) : (+it[fld] || 0);
     var curCmt = (it.cmt && it.cmt[key]) || "";
     var showLock = (sec === "monthly" && wk !== null);
     var lockOn = showLock && !!(it.hw && it.hw[wk]);
@@ -1259,6 +1330,11 @@
       if (committed) return; committed = true;
       var v = parseAmt(inp.value);
       if (wk !== null) { if (v) it.w[wk] = v; else { delete it.w[wk]; if (it.hw) delete it.hw[wk]; } }
+      else if (holdMode) {
+        it.fh = it.fh || {};
+        if (v) it.fh[hwk] = v; else delete it.fh[hwk];
+        it.hold = 0;
+      }
       else it[fld] = v;
       if (extra) extra();
       save(); renderAll();
@@ -1295,6 +1371,8 @@
       defs.push({ k: "hold", label: "On hold" });
     } else if (sec === "savings") {
       ws.forEach(function (w, i) { defs.push(wkd(i)); });
+    } else if (sec === "fp") {
+      ws.forEach(function (w, i) { defs.push(wkd(i)); });
     } else if (sec === "rel") {
       ws.forEach(function (w, i) { defs.push(wkd(i)); });
     }
@@ -1323,7 +1401,8 @@
     document.getElementById("imAlloc").value = it.alloc || "";
     document.getElementById("imProj").value = it.projected || "";
     document.getElementById("imCarry").value = it.carry || "";
-    document.getElementById("imHold").value = it.hold || "";
+    var hwkM = currentWeekIndex(curMonth); if (hwkM < 0) hwkM = 0;
+    document.getElementById("imHold").value = ((it.fh || {})[hwkM]) || "";
     document.getElementById("imDueRow").style.display = (sec === "incomes" || sec === "savings") ? "none" : "flex";
     document.getElementById("imAllocWrap").style.display = (sec === "incomes" || sec === "savings") ? "none" : "block";
     document.getElementById("imProjWrap").style.display = (sec === "weekly" || sec === "savings") ? "none" : "block";
@@ -1347,8 +1426,14 @@
     it.name = name;
     if (sec !== "incomes" && sec !== "savings") { it.due = document.getElementById("imDue").value.trim(); it.alloc = parseAmt(document.getElementById("imAlloc").value); }
     if (sec !== "weekly" && sec !== "savings") it.projected = parseAmt(document.getElementById("imProj").value);
-    if (sec === "monthly") { it.carry = parseAmt(document.getElementById("imCarry").value); it.hold = parseAmt(document.getElementById("imHold").value); }
-    if (sec === "weekly") { it.hold = parseAmt(document.getElementById("imHold").value); }
+    if (sec === "monthly") { it.carry = parseAmt(document.getElementById("imCarry").value); }
+    if (sec === "monthly" || sec === "weekly") {
+      var hv2 = parseAmt(document.getElementById("imHold").value);
+      var hwk2 = currentWeekIndex(curMonth); if (hwk2 < 0) hwk2 = 0;
+      it.fh = it.fh || {};
+      if (hv2) it.fh[hwk2] = hv2; else delete it.fh[hwk2];
+      it.hold = 0;
+    }
     if (editing.isNew) m[sec].push(it);
     closeItemModal(); save(); renderAll();
   }
@@ -1419,6 +1504,8 @@
       }
       return;
     }
+    var fa = e.target.closest(".fhamt");
+    if (fa && !fa.closest("td").querySelector("input")) { beginFhEdit(fa); return; }
     var ra = e.target.closest(".relamt");
     if (ra && !ra.closest("td").querySelector("input")) { beginRelEdit(ra); return; }
     var nm = e.target.closest("td[data-edit]");
@@ -1494,6 +1581,7 @@
   // ---------- Init ----------
   load();
   syncCfgLoad();
+  migrateHolds();
   curMonth = ensureCurrentMonth();
   applyTheme();
   save();
