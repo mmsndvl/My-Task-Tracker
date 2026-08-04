@@ -1,5 +1,5 @@
 // Service worker v3: caches both apps (to-do + finances) for offline use
-var CACHE = "my-todo-tracker-v18";
+var CACHE = "my-todo-tracker-v19";
 var FILES = [
   "./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png",
   "./finance.html", "./manifest-finance.json", "./icon-finance-192.png", "./icon-finance-512.png", "./icon-finance-180.png"
