@@ -151,6 +151,46 @@
   #toast button { background: none; border: none; color: var(--gold); font-weight: 700; cursor: pointer; font-size: 13px; }
 
   .empty { text-align: center; padding: 40px 18px; color: var(--faint); font-size: 13px; }
+
+  /* ===== 🌙 Dark mode ===== */
+  body.dark {
+    --bg: #131816; --card: #1C2320; --ink: #E4E9E6; --heading: #8FD6C6;
+    --muted: #9BABA3; --faint: #6E7F77; --line: #2B3531;
+    --gold: #E5B968; --red: #E4796A; --green: #6FBF95; --blue: #7FA9DC; --purple: #B49BE0;
+  }
+  body.dark .badge { background: #1E332B; color: #8FD6C6; }
+  body.dark .monthbar button.nav, body.dark #monthSelect { background: var(--card); color: var(--heading); border-color: var(--line); }
+  body.dark .view-tab { background: var(--card); }
+  body.dark .view-tab.active { background: #8FD6C6; border-color: #8FD6C6; color: #0F1D19; }
+  body.dark .btn-cols { background: var(--card); }
+  body.dark .btn-cols:hover { background: #242D29; }
+  body.dark table.grid th, body.dark table.grid td.nm { background: var(--card); }
+  body.dark table.grid tr.totals td, body.dark table.grid tr.totals td.nm { background: #222B27; }
+  body.dark table.grid td { border-bottom-color: #242E2A; }
+  body.dark table.wk td { border-bottom-color: #242E2A; }
+  body.dark table.grid td.cell.zero { color: #4C5A54; }
+  body.dark table.grid td.cell:hover { background: #26302B; }
+  body.dark table.grid td.cell.curwk, body.dark table.wk tr.cur td { background: #202C27; }
+  body.dark table.grid th.col-proj { background: #3A3220; color: #E5B968; border-right-color: #57492A; }
+  body.dark table.grid td.col-proj { background: #2C2819; border-right-color: #57492A; }
+  body.dark table.grid td.cell.col-proj:hover { background: #3B341F; }
+  body.dark table.grid tr.totals td.col-proj { background: #352E1D; }
+  body.dark table.grid td.cell[style*="background:#"], body.dark td.relcell[style*="background:#"] { color: #22302B; }
+  body.dark td.relcell.reldone { background: #1E3A55 !important; }
+  body.dark td.relcell.reldone .relamt { color: #9DC8EE; }
+  body.dark .reldot { background: #2B3531; color: #6E7F77; }
+  body.dark td.relcell.reldone .reldot { background: #3D6FB4; color: #fff; }
+  body.dark .cellbtn { background: #2B3531; color: #E4E9E6; }
+  body.dark .cellbtn:hover { background: #354139; }
+  body.dark td input.cellinput { background: #141A17; color: var(--ink); }
+  body.dark .modal { background: #1C2320; }
+  body.dark .modal input, body.dark .modal select { background: #141A17; color: var(--ink); border-color: #33403A; }
+  body.dark .mb-cancel { background: #2B3531; color: #9BABA3; }
+  body.dark .link-btn:hover { background: #1C2320; }
+  body.dark .allclear { background: #1E332B; }
+  body.dark .st-none { background: #2B3531; }
+  body.dark .relamt:hover { background: rgba(143,214,198,.12); }
+
   @media (max-width: 520px) { h1 { font-size: 22px; } .stat .val { font-size: 17px; } }
 </style>
 </head>
@@ -187,6 +227,7 @@
       <button class="link-btn" id="btnExport">⬇ Export backup</button>
       <button class="link-btn" id="btnImport">⬆ Import backup</button>
       <button class="link-btn" id="btnSync">☁ Set up sync</button>
+      <button class="link-btn" id="btnTheme">🌙 Dark mode</button>
       <input type="file" id="fileInput" accept=".json" style="display:none">
     </div>
   </div>
@@ -253,7 +294,7 @@
 <script>
 (function () {
   var KEY = "my-finance-tracker-v1";
-  var state = { months: {}, bank: { name: "Bank balance", amount: null }, cols: {}, updatedAt: 0 };
+  var state = { months: {}, bank: { name: "Bank balance", amount: null }, cols: {}, dark: false, updatedAt: 0 };
   var curMonth = null;        // "2026-07"
   var view = "dash";
   var toastTimer = null, lastDeleted = null;
@@ -261,6 +302,10 @@
   var colSec = null;          // section whose columns modal is open
   var MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   var SWATCH = ["#FFF3BF", "#FFE3C6", "#FBDDE4", "#DDF3E4", "#DCEBFA", "#EDE4F8"];
+  // ★ New table layout (Status → Projected → Carry, Month-end Actual + Diff) starts August 2026.
+  //   Months BEFORE this keep the old layout (Carry → Projected, Paid + Remaining) — July stays untouched.
+  var NEW_LAYOUT_FROM = "2026-08";
+  function isNewLayout() { return curMonth >= NEW_LAYOUT_FROM; }
 
   // ---------- Helpers ----------
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -289,6 +334,15 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, 6000);
   }
   function hideToast() { document.getElementById("toast").classList.remove("show"); }
+
+  // ★ Dark mode — persisted in the synced document, so all devices follow
+  function applyTheme() {
+    document.body.classList.toggle("dark", !!state.dark);
+    var b = document.getElementById("btnTheme");
+    if (b) b.textContent = state.dark ? "☀️ Light mode" : "🌙 Dark mode";
+    var mt = document.querySelector('meta[name="theme-color"]');
+    if (mt) mt.setAttribute("content", state.dark ? "#131816" : "#0E6B5C");
+  }
 
   // ★ Hidden columns: state.cols[section][key] === true means hidden
   function hidCol(sec, k) { return !!(state.cols && state.cols[sec] && state.cols[sec][k]); }
@@ -389,6 +443,10 @@
   function mexpWeek(m, wi) { return m.monthly.reduce(function (s, i) { return s + (+i.w[wi] || 0); }, 0); }
   function mexpTotal(m) { return m.monthly.reduce(function (s, i) { return s + sumW(i.w); }, 0); }
   function itemRemaining(it) { return Math.round(((+it.projected || 0) + (+it.carry || 0) - sumW(it.w)) * 100) / 100; }
+  // ★ Month-end Actual Total Expenses for one item = Carry + W1 + W2 + W3 + W4 (like the old Excel)
+  function itemActual(it) { return Math.round(((+it.carry || 0) + sumW(it.w)) * 100) / 100; }
+  // ★ Actual Difference from Projected = Projected − Month-end Actual (negative = lumagpas sa projected)
+  function itemDiffProj(it) { return Math.round(((+it.projected || 0) - itemActual(it)) * 100) / 100; }
   function holdTotal(m) {
     return m.monthly.reduce(function (s, i) { return s + (+i.hold || 0); }, 0) +
            m.weekly.reduce(function (s, i) { return s + (+i.hold || 0); }, 0);
@@ -430,13 +488,13 @@
 
   // ---------- Storage & Sync ----------
   var docUpdatedAt = 0;
-  function currentDoc() { return { version: 1, months: state.months, bank: state.bank, cols: state.cols, updatedAt: docUpdatedAt }; }
+  function currentDoc() { return { version: 1, months: state.months, bank: state.bank, cols: state.cols, dark: !!state.dark, updatedAt: docUpdatedAt }; }
   function load() {
     try {
       var raw = localStorage.getItem(KEY);
       if (raw) {
         var p = JSON.parse(raw);
-        if (p && p.months) { state.months = p.months; state.bank = p.bank || state.bank; state.cols = p.cols || {}; docUpdatedAt = p.updatedAt || 0; }
+        if (p && p.months) { state.months = p.months; state.bank = p.bank || state.bank; state.cols = p.cols || {}; state.dark = !!p.dark; docUpdatedAt = p.updatedAt || 0; }
       }
     } catch (e) {}
   }
@@ -474,9 +532,11 @@
     state.months = remote.months || {};
     state.bank = remote.bank || state.bank;
     state.cols = remote.cols || {};
+    state.dark = !!remote.dark;
     docUpdatedAt = remote.updatedAt || Date.now();
     try { localStorage.setItem(KEY, JSON.stringify(currentDoc())); } catch (e) {}
     if (!state.months[curMonth]) curMonth = ensureCurrentMonth();
+    applyTheme();
     renderAll();
   }
   function syncPull(done) {
@@ -547,7 +607,9 @@
         for (var ym in data.months) { state.months[ym] = data.months[ym]; count++; }
         if (data.bank) state.bank = data.bank;
         if (data.cols) state.cols = data.cols;
+        if (typeof data.dark === "boolean") state.dark = data.dark;
         curMonth = state.months[todayYM()] ? todayYM() : monthKeys()[monthKeys().length - 1];
+        applyTheme();
         save(); renderAll();
         toast("Imported " + count + " month(s) of data.", "", null);
       } catch (err) { toast("That file is not a valid finance backup.", "", null); }
@@ -743,45 +805,67 @@
          '<div class="hint">"On hold" = perang naka-set aside sa bank para sa weekly item na ito — kasama sa Funds Planner sa ibaba. Tap para i-edit.</div></div>';
 
     // Monthly section
+    // ★ Two layouts: NEW (Aug 2026 onwards) = Status → Projected → Carry → weeks → Month-end Actual → Diff vs Projected → On hold
+    //   OLD (Jul 2026 and earlier, untouched) = Status → Carry → Projected → weeks → Paid → Remaining → On hold
+    var NL = isNewLayout();
     var mShowStat = !hidCol("monthly", "stat");
     var mShowCarry = !hidCol("monthly", "carry");
     var mShowProj = !hidCol("monthly", "projected");
     var mShowHold = !hidCol("monthly", "hold");
     var mVisW = []; ws.forEach(function (w, i) { if (!hidCol("monthly", "w" + i)) mVisW.push(i); });
     var mHidden = (mShowStat ? 0 : 1) + (mShowCarry ? 0 : 1) + (mShowProj ? 0 : 1) + (mShowHold ? 0 : 1) + (ws.length - mVisW.length);
+    var thStat = '<th>Status<br><span style="font-weight:400;text-transform:none">(tap to change)</span></th>';
+    var thCarry = '<th>Carry<br><span style="font-weight:400;text-transform:none">(hold last month)</span></th>';
+    var thProj = '<th class="col-proj">📌 Projected</th>';
     h += '<div class="card gridcard"><div class="gridhead"><div class="t">🏠 Monthly Expenses & Installments</div>' +
          '<div class="gbtns"><button class="btn-cols" data-cols="monthly">👁 Columns' + (mHidden ? " (" + mHidden + " hidden)" : "") + '</button>' +
          '<button class="btn-mini" data-add="monthly">+ Add</button></div></div><div class="scrollx"><table class="grid"><tr><th class="nm">Item</th>' +
-         (mShowStat ? '<th>Status<br><span style="font-weight:400;text-transform:none">(tap to change)</span></th>' : '') +
-         (mShowCarry ? '<th>Carry<br><span style="font-weight:400;text-transform:none">(hold last month)</span></th>' : '') +
-         (mShowProj ? '<th class="col-proj">📌 Projected</th>' : '');
+         (mShowStat ? thStat : '') +
+         (NL
+           ? (mShowProj ? thProj : '') + (mShowCarry ? thCarry : '')
+           : (mShowCarry ? thCarry : '') + (mShowProj ? thProj : ''));
     mVisW.forEach(function (i) { h += '<th>W' + (i + 1) + '<br>' + wkLabel(ws[i]) + '</th>'; });
-    h += '<th>Paid</th><th>Remaining</th>' + (mShowHold ? '<th>On hold</th>' : '') + '</tr>';
+    if (NL) {
+      h += '<th>Month-end Actual<br><span style="font-weight:400;text-transform:none">(Carry + W1–W4)</span></th>' +
+           '<th>Diff vs Projected<br><span style="font-weight:400;text-transform:none">(Projected − Actual)</span></th>';
+    } else {
+      h += '<th>Paid</th><th>Remaining</th>';
+    }
+    h += (mShowHold ? '<th>On hold</th>' : '') + '</tr>';
     var mCols = 1 + (mShowStat ? 1 : 0) + (mShowCarry ? 1 : 0) + (mShowProj ? 1 : 0) + mVisW.length + 2 + (mShowHold ? 1 : 0);
     if (!m.monthly.length) h += '<tr><td colspan="' + mCols + '"><div class="empty">No monthly expenses yet.</div></td></tr>';
     m.monthly.forEach(function (it) {
       var paid = sumW(it.w), rem = itemRemaining(it);
+      var actual = itemActual(it), dproj = itemDiffProj(it);
       var info = dueInfo(it);
       h += '<tr><td class="nm" data-edit="monthly" data-id="' + it.id + '">' + esc(it.name) + (it.due ? '<span class="due">Due: ' + esc(it.due) + '</span>' : '') + '</td>';
       if (mShowStat) {
         h += '<td style="cursor:pointer" data-cyclestat="' + it.id + '" title="Tap to change: Auto → Paid → On hold → Unpaid">' +
              (info ? '<span class="st ' + info.cls + '">' + info.label + '</span>' : '<span class="st st-none">—</span>') + '</td>';
       }
+      var tdCarry = '';
       if (mShowCarry) {
         var dc = deco(it, "carry");
-        h += '<td class="cell ' + ((+it.carry || 0) ? "" : "zero") + dc.cls + '" data-fld="carry" data-sec="monthly" data-id="' + it.id + '"' + (dc.sty ? ' style="' + dc.sty + '"' : '') + dc.ttl + '>' + ((+it.carry || 0) ? fmt(+it.carry) : "—") + '</td>';
+        tdCarry = '<td class="cell ' + ((+it.carry || 0) ? "" : "zero") + dc.cls + '" data-fld="carry" data-sec="monthly" data-id="' + it.id + '"' + (dc.sty ? ' style="' + dc.sty + '"' : '') + dc.ttl + '>' + ((+it.carry || 0) ? fmt(+it.carry) : "—") + '</td>';
       }
+      var tdProj = '';
       if (mShowProj) {
         var dp2 = deco(it, "projected");
-        h += '<td class="cell col-proj' + dp2.cls + '" data-fld="projected" data-sec="monthly" data-id="' + it.id + '"' + (dp2.sty ? ' style="' + dp2.sty + '"' : '') + dp2.ttl + '>' + fmt(+it.projected || 0) + '</td>';
+        tdProj = '<td class="cell col-proj' + dp2.cls + '" data-fld="projected" data-sec="monthly" data-id="' + it.id + '"' + (dp2.sty ? ' style="' + dp2.sty + '"' : '') + dp2.ttl + '>' + fmt(+it.projected || 0) + '</td>';
       }
+      h += NL ? (tdProj + tdCarry) : (tdCarry + tdProj);
       mVisW.forEach(function (i) {
         var v = +it.w[i] || 0;
         var dw = deco(it, "w" + i);
         h += '<td class="cell ' + (v ? "" : "zero") + (i === cw ? " curwk" : "") + dw.cls + '" data-wk="' + i + '" data-sec="monthly" data-id="' + it.id + '"' + (dw.sty ? ' style="' + dw.sty + '"' : '') + dw.ttl + '>' + (v ? fmt(v) : "—") + '</td>';
       });
-      h += '<td style="font-weight:700">' + fmt(paid) + '</td>';
-      h += '<td style="font-weight:800" class="' + (rem > 0 ? "neg" : "pos") + '">' + fmt(rem) + '</td>';
+      if (NL) {
+        h += '<td style="font-weight:700">' + fmt(actual) + '</td>';
+        h += '<td style="font-weight:800" class="' + (dproj >= 0 ? "pos" : "neg") + '">' + fmt(dproj) + '</td>';
+      } else {
+        h += '<td style="font-weight:700">' + fmt(paid) + '</td>';
+        h += '<td style="font-weight:800" class="' + (rem > 0 ? "neg" : "pos") + '">' + fmt(rem) + '</td>';
+      }
       if (mShowHold) {
         var dh2 = deco(it, "hold");
         h += '<td class="cell ' + ((+it.hold || 0) ? "" : "zero") + dh2.cls + '" data-fld="hold" data-sec="monthly" data-id="' + it.id + '" style="' + dh2.sty + '"' + dh2.ttl + '>' + ((+it.hold || 0) ? fmt(+it.hold) : "—") + '</td>';
@@ -791,12 +875,22 @@
     var mproj = m.monthly.reduce(function (s, i) { return s + (+i.projected || 0); }, 0);
     var mcarry = m.monthly.reduce(function (s, i) { return s + (+i.carry || 0); }, 0);
     var mrem = m.monthly.reduce(function (s, i) { return s + itemRemaining(i); }, 0);
+    var mActualTot = Math.round((mcarry + mexpTotal(m)) * 100) / 100;
+    var mDiffTot = Math.round((mproj - mActualTot) * 100) / 100;
+    var tdCarryTot = mShowCarry ? '<td>' + fmt(mcarry) + '</td>' : '';
+    var tdProjTot = mShowProj ? '<td class="col-proj">' + fmt(mproj) + '</td>' : '';
     h += '<tr class="totals"><td class="nm">TOTAL MONTHLY</td>' + (mShowStat ? '<td></td>' : '') +
-         (mShowCarry ? '<td>' + fmt(mcarry) + '</td>' : '') + (mShowProj ? '<td class="col-proj">' + fmt(mproj) + '</td>' : '');
+         (NL ? (tdProjTot + tdCarryTot) : (tdCarryTot + tdProjTot));
     mVisW.forEach(function (i) { h += '<td>' + fmt(mexpWeek(m, i)) + '</td>'; });
-    h += '<td>' + fmt(mexpTotal(m)) + '</td><td class="' + (mrem > 0 ? "neg" : "pos") + '">' + fmt(mrem) + '</td>' +
-         (mShowHold ? '<td>' + fmt(m.monthly.reduce(function (s, i) { return s + (+i.hold || 0); }, 0)) + '</td>' : '') + '</tr>';
-    h += '</table></div><div class="hint">Tap any amount to edit — sa editor: 💬 comment, 🎨 kulay ng cell. <b>"Carry"</b> = ang perang na-hold mo sa bank noong nakaraang buwan para sa item na ito — awtomatikong dinadala sa bagong buwan at dinadagdag sa babayaran/pondo. <b>"On hold"</b> = perang naka-set aside sa bank ngayong buwan.</div></div>';
+    if (NL) {
+      h += '<td>' + fmt(mActualTot) + '</td><td class="' + (mDiffTot >= 0 ? "pos" : "neg") + '">' + fmt(mDiffTot) + '</td>';
+    } else {
+      h += '<td>' + fmt(mexpTotal(m)) + '</td><td class="' + (mrem > 0 ? "neg" : "pos") + '">' + fmt(mrem) + '</td>';
+    }
+    h += (mShowHold ? '<td>' + fmt(m.monthly.reduce(function (s, i) { return s + (+i.hold || 0); }, 0)) + '</td>' : '') + '</tr>';
+    h += '</table></div><div class="hint">Tap any amount to edit — sa editor: 💬 comment, 🎨 kulay ng cell. ' +
+         (NL ? '<b>"Month-end Actual"</b> = Carry + W1–W4, ang kabuuang aktwal na gastos ngayong buwan. <b>"Diff vs Projected"</b> = Projected − Actual: positive (green) = hindi lumagpas sa projected; negative (red) = lumagpas. ' : '') +
+         '<b>"Carry"</b> = ang perang na-hold mo sa bank noong nakaraang buwan para sa item na ito — awtomatikong dinadala sa bagong buwan at dinadagdag sa babayaran/pondo. <b>"On hold"</b> = perang naka-set aside sa bank ngayong buwan.</div></div>';
 
     // Net income summary — mirrors the Excel's TOTAL DISBURSEMENTS + NET INCOME rows
     h += '<div class="card gridcard"><div class="gridhead"><div class="t">💵 Net After Expenses</div></div>' +
@@ -1049,8 +1143,13 @@
       defs.push({ k: "hold", label: "On hold" });
     } else if (sec === "monthly") {
       defs.push({ k: "stat", label: "Status" });
-      defs.push({ k: "carry", label: "Carry" });
-      defs.push({ k: "projected", label: "📌 Projected" });
+      if (isNewLayout()) {
+        defs.push({ k: "projected", label: "📌 Projected" });
+        defs.push({ k: "carry", label: "Carry" });
+      } else {
+        defs.push({ k: "carry", label: "Carry" });
+        defs.push({ k: "projected", label: "📌 Projected" });
+      }
       ws.forEach(function (w, i) { defs.push(wkd(i)); });
       defs.push({ k: "hold", label: "On hold" });
     } else if (sec === "rel") {
@@ -1208,6 +1307,13 @@
     if (this.files && this.files[0]) importBackup(this.files[0]); this.value = "";
   });
 
+  // ★ Dark mode toggle — saved & synced, kaya susunod din ang ibang devices mo
+  document.getElementById("btnTheme").addEventListener("click", function () {
+    state.dark = !state.dark;
+    applyTheme();
+    save();
+  });
+
   document.getElementById("btnSync").addEventListener("click", function () {
     document.getElementById("syncRepoInput").value = SYNC.repo || "";
     document.getElementById("syncTokenInput").value = SYNC.token || "";
@@ -1244,6 +1350,7 @@
   load();
   syncCfgLoad();
   curMonth = ensureCurrentMonth();
+  applyTheme();
   save();
   renderAll();
   updateSyncBtn();
