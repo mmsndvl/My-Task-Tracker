@@ -216,6 +216,7 @@
     <select id="monthSelect"></select>
     <button class="nav" id="nextMonth">›</button>
     <button class="btn-newmonth" id="btnNewMonth" title="Creates the next month, copies your items, and carries over held funds automatically">+ New month</button>
+    <button class="btn-newmonth" id="btnDelMonth" style="background:#FBE7E4;color:var(--red)" title="Burahin ang buwang nakabukas ngayon (may kumpirmasyon muna)">🗑</button>
   </div>
 
   <div class="view-tabs">
@@ -401,7 +402,7 @@
     if (section === "monthly") { it.due = ""; it.alloc = 0; it.projected = 0; it.carry = 0; it.hold = 0; }
     return it;
   }
-  function blankMonth() { return { incomes: [], weekly: [], monthly: [] }; }
+  function blankMonth() { return { incomes: [], weekly: [], monthly: [], savings: [] }; }
   function cloneMonthFrom(src) {
     var m = blankMonth();
     (src.incomes || []).forEach(function (it) {
@@ -415,6 +416,9 @@
       //   they stay in the bank and are added to the new month for this item.
       m.monthly.push({ id: uid(), name: it.name, due: it.due || "", alloc: it.alloc || 0,
                        projected: it.projected || 0, carry: +it.hold || 0, hold: 0, w: {}, rel: {}, relDone: {} });
+    });
+    (src.savings || []).forEach(function (it) {
+      m.savings.push({ id: uid(), name: it.name, w: {} });
     });
     return m;
   }
@@ -438,6 +442,45 @@
     curMonth = ym; save(); renderAll();
     toast("Created " + ymLabel(ym) + " — dinala ang mga naka-hold na funds bilang Carry.", "", null);
   }
+  // ★ Delete the currently open month (with confirmation + undo)
+  var lastDeletedMonth = null;
+  function monthHasData(mm) {
+    if (!mm) return false;
+    var any = false;
+    ["incomes", "weekly", "monthly", "savings"].forEach(function (sec) {
+      (mm[sec] || []).forEach(function (it) {
+        if (sumW(it.w) > 0 || (+it.hold || 0) > 0 || (+it.carry || 0) > 0) any = true;
+        if (it.rel && Object.keys(it.rel).length) any = true;
+      });
+    });
+    return any;
+  }
+  function deleteCurrentMonth() {
+    var keys = monthKeys();
+    if (keys.length <= 1) { toast("Hindi pwedeng burahin — ito na lang ang natitirang buwan.", "", null); return; }
+    var ym = curMonth, mm = state.months[ym];
+    var msg = "Buburahin ang " + ymLabel(ym) + ".";
+    if (monthHasData(mm)) {
+      msg += "\n\n⚠ MAY LAMAN ang buwang ito (may mga amounts, holds, o carry na nakalagay). Mabubura silang lahat.";
+    } else {
+      msg += "\n\nMukhang wala pa namang nailalagay na amounts dito.";
+    }
+    msg += "\n\nItuloy ang pagbura?";
+    if (!confirm(msg)) return;
+    lastDeletedMonth = { ym: ym, data: mm };
+    delete state.months[ym];
+    var remaining = monthKeys();
+    curMonth = state.months[todayYM()] ? todayYM() : remaining[remaining.length - 1];
+    save(); renderAll();
+    toast("Binura ang " + ymLabel(ym) + ".", "Undo", function () {
+      if (lastDeletedMonth) {
+        state.months[lastDeletedMonth.ym] = lastDeletedMonth.data;
+        curMonth = lastDeletedMonth.ym;
+        lastDeletedMonth = null;
+        save(); renderAll();
+      }
+    });
+  }
 
   // ---------- Computations ----------
   function M() { return state.months[curMonth]; }
@@ -459,14 +502,18 @@
   function itemRemaining(it) { return Math.round(((+it.projected || 0) + (+it.carry || 0) - paidActual(it)) * 100) / 100; }
   // ★ Net income of one month = income − (weekly + monthly expenses)
   function monthNet(mm) { return Math.round((incActualTotal(mm) - wexpTotal(mm) - mexpTotal(mm)) * 100) / 100; }
+  // ★ Savings: per-week na ipon na kayo ang nagpapasya; binabawas sa Cash on hand
+  function savWeek(mm, wi) { return (mm.savings || []).reduce(function (s, i) { return s + (+i.w[wi] || 0); }, 0); }
+  function savTotal(mm) { return Math.round((mm.savings || []).reduce(function (s, i) { return s + sumW(i.w); }, 0) * 100) / 100; }
   // ★ Cash on hand carried over from ALL previous months (live-computed, kaya laging tama
-  //   kahit i-edit mo pa ang lumang buwan) + any manual adjustments (cashAdj) sa mga buwang iyon
+  //   kahit i-edit mo pa ang lumang buwan) + any manual adjustments (cashAdj) sa mga buwang iyon.
+  //   Binabawas na rin dito ang savings ng bawat nakaraang buwan.
   function cashStartOf(ym) {
     var keys = monthKeys(), cash = 0;
     for (var i = 0; i < keys.length; i++) {
       if (keys[i] >= ym) break;
       var mm = state.months[keys[i]];
-      cash += monthNet(mm) + (+mm.cashAdj || 0);
+      cash += monthNet(mm) - savTotal(mm) + (+mm.cashAdj || 0);
     }
     return Math.round(cash * 100) / 100;
   }
@@ -678,16 +725,23 @@
          '<div class="val ' + (netMonth >= 0 ? "pos" : "neg") + '">' + fmt(netMonth) + '</div>' +
          '<div class="sub2">' + fmt(incAct) + ' in − ' + fmt(expAct) + ' out</div></div>';
     // ★ Cash on hand = puro NET INCOME lang (Income − monthly at weekly expenses),
-    //   dala-dala mula sa mga nakaraang buwan. WALANG kinalaman ang "On hold" dito —
-    //   ang mga hino-hold sa bank ay ang mismong expenses na nasa week columns na,
-    //   kaya bawas na sila sa net. Hindi na sila ibinabawas ulit.
+    //   dala-dala mula sa mga nakaraang buwan, MINUS ang Savings (ipon ay hindi na malayang pera).
+    //   WALANG kinalaman ang "On hold" dito — ang mga hino-hold sa bank ay ang mismong
+    //   expenses na nasa week columns na, kaya bawas na sila. Hindi na sila ibinabawas ulit.
     var cashStart = cashStartOf(curMonth);
     var cashAdj = +(m.cashAdj || 0);
-    var cashOnHand = Math.round((cashStart + netMonth + cashAdj) * 100) / 100;
+    var savT = savTotal(m);
+    var cashOnHand = Math.round((cashStart + netMonth - savT + cashAdj) * 100) / 100;
     h += '<div class="card stat" style="cursor:pointer;border-color:#BFD9CE" id="cashStat"><div class="lbl">💵 Cash on hand (tap to adjust)</div>' +
          '<div class="val ' + (cashOnHand >= 0 ? "pos" : "neg") + '">' + fmt(cashOnHand) + '</div>' +
          '<div class="sub2">Dala mula sa mga nakaraang buwan ' + fmt(cashStart) + ' + net ngayong buwan ' + fmt(netMonth) +
+         (savT ? ' − savings ' + fmt(savT) : '') +
          (cashAdj ? ' + adjustment ' + fmt(cashAdj) : '') + '</div></div>';
+    if (savT) {
+      h += '<div class="card stat" style="border-color:#F0DFC0"><div class="lbl">💰 Savings this month</div>' +
+           '<div class="val" style="color:#A96F0F">' + fmt(savT) + '</div>' +
+           '<div class="sub2">Kabuuan ng nailagay mo sa Savings table</div></div>';
+    }
     h += '<div class="card stat"><div class="lbl">Projected leftover (full month)</div>' +
          '<div class="val ' + (projIncome - projExp >= 0 ? "pos" : "neg") + '">' + fmt(projIncome - projExp) + '</div>' +
          '<div class="sub2">' + fmt(projIncome) + ' projected − ' + fmt(projExp) + ' bills</div></div>';
@@ -942,6 +996,30 @@
     h += '</table></div><div class="hint">Tap any amount to edit — sa editor: 💬 comment, 🎨 kulay ng cell, <b>🔒 = "itatabi pa lang"</b>: markahan ang week amount na tinabi mo sa bank pero HINDI PA disbursed sa bill (magiging purple na may 🔒) — hindi ito bibilangin sa Paid status at Unpaid balance hangga\'t naka-🔒; i-tap ulit ang 🔒 kapag na-disburse na. ' +
          (NL ? '<b>"Month-end Actual"</b> = Carry + W1–W4, ang kabuuang aktwal na gastos ngayong buwan. <b>"Diff vs Projected"</b> = Projected − Actual: positive (green) = hindi lumagpas sa projected; negative (red) = lumagpas. ' : '') +
          '<b>"Carry"</b> = ang perang na-hold mo sa bank noong nakaraang buwan para sa item na ito — awtomatikong dinadala sa bagong buwan at dinadagdag sa babayaran/pondo. <b>"On hold"</b> = perang naka-set aside sa bank ngayong buwan.</div></div>';
+
+    // ★ SAVINGS section — ipon per week na kayo ang nagpapasya; binabawas sa Cash on hand
+    if (!m.savings) m.savings = [];
+    var sVisW = []; ws.forEach(function (w, i) { if (!hidCol("savings", "w" + i)) sVisW.push(i); });
+    var sHidden = ws.length - sVisW.length;
+    h += '<div class="card gridcard"><div class="gridhead"><div class="t">💰 Savings — Ipon per Week</div>' +
+         '<div class="gbtns"><button class="btn-cols" data-cols="savings">👁 Columns' + (sHidden ? " (" + sHidden + " hidden)" : "") + '</button>' +
+         '<button class="btn-mini" data-add="savings">+ Add</button></div></div><div class="scrollx"><table class="grid"><tr><th class="nm">Savings</th>';
+    sVisW.forEach(function (i) { h += '<th>W' + (i + 1) + '<br>' + wkLabel(ws[i]) + '</th>'; });
+    h += '<th>Total</th></tr>';
+    if (!m.savings.length) h += '<tr><td colspan="' + (sVisW.length + 2) + '"><div class="empty">Wala pang savings — tap "+ Add" para pangalanan ang ipon mo (e.g. Emergency fund, GSave).</div></td></tr>';
+    m.savings.forEach(function (it) {
+      h += '<tr><td class="nm" data-edit="savings" data-id="' + it.id + '">' + esc(it.name) + '</td>';
+      sVisW.forEach(function (i) {
+        var v = +it.w[i] || 0;
+        var dw = deco(it, "w" + i);
+        h += '<td class="cell ' + (v ? "" : "zero") + (i === cw ? " curwk" : "") + dw.cls + '" data-wk="' + i + '" data-sec="savings" data-id="' + it.id + '"' + (dw.sty ? ' style="' + dw.sty + '"' : '') + dw.ttl + '>' + (v ? fmt(v) : "—") + '</td>';
+      });
+      h += '<td style="font-weight:700">' + fmt(sumW(it.w)) + '</td></tr>';
+    });
+    h += '<tr class="totals"><td class="nm">TOTAL SAVINGS</td>';
+    sVisW.forEach(function (i) { h += '<td>' + fmt(savWeek(m, i)) + '</td>'; });
+    h += '<td>' + fmt(savTotal(m)) + '</td></tr>';
+    h += '</table></div><div class="hint">Ilagay bawat linggo kung magkano ang gusto mong itabi bilang ipon — pwede mong baguhin anumang oras, kayo ang magpapasya kada linggo. Ang anumang nasa Savings ay <b>awtomatikong binabawas sa 💵 Cash on hand</b> sa Dashboard para laging up to date. May 💬 comment at 🎨 kulay din dito. Tap ang pangalan para i-rename o i-delete.</div></div>';
 
     // Net income summary — mirrors the Excel's TOTAL DISBURSEMENTS + NET INCOME rows
     h += '<div class="card gridcard"><div class="gridhead"><div class="t">💵 Net After Expenses</div></div>' +
@@ -1215,6 +1293,8 @@
       }
       ws.forEach(function (w, i) { defs.push(wkd(i)); });
       defs.push({ k: "hold", label: "On hold" });
+    } else if (sec === "savings") {
+      ws.forEach(function (w, i) { defs.push(wkd(i)); });
     } else if (sec === "rel") {
       ws.forEach(function (w, i) { defs.push(wkd(i)); });
     }
@@ -1237,22 +1317,23 @@
     if (!it) return;
     editing = { sec: sec, id: id, item: it, isNew: isNew };
     document.getElementById("imTitle").textContent = (isNew ? "Add " : "Edit ") +
-      (sec === "incomes" ? "income source" : sec === "weekly" ? "weekly expense" : "monthly expense");
+      (sec === "incomes" ? "income source" : sec === "weekly" ? "weekly expense" : sec === "savings" ? "savings" : "monthly expense");
     document.getElementById("imName").value = it.name || "";
     document.getElementById("imDue").value = it.due || "";
     document.getElementById("imAlloc").value = it.alloc || "";
     document.getElementById("imProj").value = it.projected || "";
     document.getElementById("imCarry").value = it.carry || "";
     document.getElementById("imHold").value = it.hold || "";
-    document.getElementById("imDueRow").style.display = sec === "incomes" ? "none" : "flex";
-    document.getElementById("imAllocWrap").style.display = sec === "incomes" ? "none" : "block";
-    document.getElementById("imProjWrap").style.display = sec === "weekly" ? "none" : "block";
+    document.getElementById("imDueRow").style.display = (sec === "incomes" || sec === "savings") ? "none" : "flex";
+    document.getElementById("imAllocWrap").style.display = (sec === "incomes" || sec === "savings") ? "none" : "block";
+    document.getElementById("imProjWrap").style.display = (sec === "weekly" || sec === "savings") ? "none" : "block";
     document.getElementById("imExtraRow").style.display = (sec === "monthly" || sec === "weekly") ? "flex" : "none";
     document.getElementById("imCarryWrap").style.display = sec === "monthly" ? "block" : "none";
     document.getElementById("imDelete").style.display = isNew ? "none" : "inline-block";
     document.getElementById("imNote").textContent =
       sec === "monthly" ? "Tip: for due dates, just put the day number (e.g. 15). Carry = perang na-hold sa bank last month para sa item na ito (automatic sa new month). On hold = perang naka-set aside ngayong buwan." :
       sec === "weekly" ? "Weekly items repeat every week (e.g. allowance, laundry). On hold = perang naka-set aside sa bank para dito." :
+      sec === "savings" ? "Pangalanan ang ipon mo (e.g. Emergency fund, GSave). Sa table, ilagay sa week cells kung magkano ang itatabi mo bawat linggo — kayo ang magpapasya, at binabawas ito sa Cash on hand." :
       "Projected = expected income for the whole month.";
     document.getElementById("itemModal").style.display = "flex";
     document.getElementById("imName").focus();
@@ -1264,8 +1345,8 @@
     var name = document.getElementById("imName").value.trim();
     if (!name) { toast("Please enter a name.", "", null); return; }
     it.name = name;
-    if (sec !== "incomes") { it.due = document.getElementById("imDue").value.trim(); it.alloc = parseAmt(document.getElementById("imAlloc").value); }
-    if (sec !== "weekly") it.projected = parseAmt(document.getElementById("imProj").value);
+    if (sec !== "incomes" && sec !== "savings") { it.due = document.getElementById("imDue").value.trim(); it.alloc = parseAmt(document.getElementById("imAlloc").value); }
+    if (sec !== "weekly" && sec !== "savings") it.projected = parseAmt(document.getElementById("imProj").value);
     if (sec === "monthly") { it.carry = parseAmt(document.getElementById("imCarry").value); it.hold = parseAmt(document.getElementById("imHold").value); }
     if (sec === "weekly") { it.hold = parseAmt(document.getElementById("imHold").value); }
     if (editing.isNew) m[sec].push(it);
@@ -1292,6 +1373,7 @@
     var k = monthKeys(), i = k.indexOf(curMonth); if (i < k.length - 1) { curMonth = k[i + 1]; renderAll(); }
   });
   document.getElementById("btnNewMonth").addEventListener("click", createNextMonth);
+  document.getElementById("btnDelMonth").addEventListener("click", deleteCurrentMonth);
 
   ["vtDash", "vtInc", "vtExp"].forEach(function (idb) {
     document.getElementById(idb).addEventListener("click", function () {
